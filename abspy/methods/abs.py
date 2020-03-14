@@ -15,7 +15,7 @@ from abspy.tools.icy_decorator import icy
 @icy
 class abssep(object):
     
-    def __init__(self, signal, noise=None, sigma=None, bins=None, modes=None, shift=10.0, threshold=1.0):
+    def __init__(self, signal, noise=None, sigma=None, bins=None, modes=None, shift=0.0, threshold=0.0):
         """
         ABS separator class initialization function.
         
@@ -150,14 +150,14 @@ class abssep(object):
     @shift.setter
     def shift(self, shift):
         assert isinstance(shift, float)
-        assert (shift > 0)
+        assert (shift >= 0)
         self._shift = shift
         log.debug('PS power shift set as '+str(self._shift))
         
     @threshold.setter
     def threshold(self, threshold):
         assert isinstance(threshold, float)
-        assert (threshold > 0)
+        assert (threshold >= 0)
         self._threshold = threshold
         log.debug('signal to noise threshold set as '+str(self._threshold))
         
@@ -268,30 +268,31 @@ class abssep(object):
         """
         log.debug('@ abs::run')
         # binned average, converted to band power
-        _Dl = self.bincps(self._signal)
+        _DL = self.bincps(self._signal)
         if (self._noise_flag):
-            _nDl = self.bincps(self._noise)
-            _nrmsDl = self.binaps(self._sigma)
+            _NL = self.bincps(self._noise)
+            _RL = self.binaps(self._sigma)
         # prepare CMB f(ell, freq)
         _f = np.ones((self._bins,self._fsize), dtype=np.float64)
         if (self._noise_flag):
-            _f /= _nrmsDl  # rescal f according to noise RMS
             # Dl_ij = Dl_ij/sqrt(sigma_li,sigma_lj) + shift*f_li*f_lj
-            _Dl -= _nDl
-            for i in range(self._fsize):
-                for j in range(self._fsize):
-                    _Dl[:,i,j] = _Dl[:,i,j]/np.sqrt(_nrmsDl[:,i]*_nrmsDl[:,j]) + self._shift*_f[:,i]*_f[:,j]
+            for l in range(self._bins):
+                for i in range(self._fsize):
+                    _f[l,i] /= _RL[l,i]  # rescal f according to noise RMS
+                    for j in range(self._fsize):
+                        _DL[l,i,j] = (_DL[l,i,j] - _NL[l,i,j])/np.sqrt(_RL[l,i]*_RL[l,j]) + self._shift*_f[l,i]*_f[l,j]
         else:
             # Dl_ij = Dl_ij + shift*f_li*f_lj
-            for i in range(self._fsize):
-                for j in range(self._fsize):
-                    _Dl[:,i,j] += self._shift*_f[:,i]*_f[:,j]
+            for l in range(self._bins):
+                for i in range(self._fsize):
+                    for j in range(self._fsize):
+                        _DL[l,i,j] += self._shift*_f[l,i]*_f[l,j]
         # find eign at each angular mode
-        _Dbl = list()
+        _BL = list()
         for ell in range(self._bins):
             # eigvec[:,i] corresponds to eigval[i]
             # note that eigen values may be complex
-            eigval, eigvec = np.linalg.eig(_Dl[ell])
+            eigval, eigvec = np.linalg.eig(_DL[ell])
             log.debug('@ abs::__call__, angular mode '+str(self.binell[ell])+' with eigen vals '+str(eigval))
             for i in range(self._fsize):
                 eigvec[:,i] /= np.linalg.norm(eigvec[:,i])**2
@@ -300,6 +301,6 @@ class abssep(object):
                 if eigval[i] >= self._threshold:
                     _G = np.dot(_f[ell], eigvec[:,i])
                     _tmp += (_G**2/eigval[i])
-            _Dbl.append(1.0/_tmp - self._shift)
-        return (self.binell, _Dbl)
+            _BL.append(1.0/_tmp - self._shift)
+        return (self.binell, _BL)
         

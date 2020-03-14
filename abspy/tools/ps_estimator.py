@@ -47,9 +47,9 @@ class pstimator(object):
         if aposcale is None:
             aposcale = 1.0
         _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
-        _mapI = maps[0]
+        _mapT = maps[0]
         # assemble NaMaster fields
-        _f0 = nmt.NmtField(_apd_mask, [_mapI])
+        _f0 = nmt.NmtField(_apd_mask, [_mapT])
         # initialize binning scheme with ? ells per bandpower
         if binning is None:
             binning = 16
@@ -89,11 +89,11 @@ class pstimator(object):
         if aposcale is None:
             aposcale = 1.0
         _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
-        _mapI01 = maps[0]
-        _mapI02 = maps[1]
+        _mapT01 = maps[0]
+        _mapT02 = maps[1]
         # assemble NaMaster fields
-        _f01 = nmt.NmtField(_apd_mask, [_mapI01])
-        _f02 = nmt.NmtField(_apd_mask, [_mapI02])
+        _f01 = nmt.NmtField(_apd_mask, [_mapT01])
+        _f02 = nmt.NmtField(_apd_mask, [_mapT02])
         # initialize binning scheme with ? ells per bandpower
         if binning is None:
             binning = 16
@@ -225,11 +225,11 @@ class pstimator(object):
         if aposcale is None:
             aposcale = 1.0
         _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
-        _mapI = maps[0]
+        _mapT = maps[0]
         _mapQ = maps[1]
         _mapU = maps[2]
         # assemble NaMaster fields
-        _f0 = nmt.NmtField(_apd_mask, [_mapI])
+        _f0 = nmt.NmtField(_apd_mask, [_mapT])
         _f2 = nmt.NmtField(_apd_mask, [_mapQ, _mapU])
         # initialize binning scheme with ? ells per bandpower
         if binning is None:
@@ -272,16 +272,16 @@ class pstimator(object):
         if aposcale is None:
             aposcale = 1.0
         _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
-        _mapI01 = maps[0]
+        _mapT01 = maps[0]
         _mapQ01 = maps[1]
         _mapU01 = maps[2]
-        _mapI02 = maps[3]
+        _mapT02 = maps[3]
         _mapQ02 = maps[4]
         _mapU02 = maps[5]
         # assemble NaMaster fields
-        _f01 = nmt.NmtField(_apd_mask, [_mapI01])
+        _f01 = nmt.NmtField(_apd_mask, [_mapT01])
         _f21 = nmt.NmtField(_apd_mask, [_mapQ01, _mapU01])
-        _f02 = nmt.NmtField(_apd_mask, [_mapI02])
+        _f02 = nmt.NmtField(_apd_mask, [_mapT02])
         _f22 = nmt.NmtField(_apd_mask, [_mapQ02, _mapU02])
         # initialize binning scheme with ? ells per bandpower
         if binning is None:

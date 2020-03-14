@@ -21,8 +21,8 @@ class TestSeparator(unittest.TestCase):
         self.assertEqual(test_sep._lsize, test_signal.shape[0])
         self.assertEqual(test_sep._fsize, test_signal.shape[1])
         self.assertEqual(test_sep.bins, test_bins)
-        self.assertEqual(test_sep.shift, 10.0)
-        self.assertEqual(test_sep.threshold, 1.0)
+        self.assertEqual(test_sep.shift, 0.0)
+        self.assertEqual(test_sep.threshold, 0.0)
         #
         test_shift = 23.0
         test_threshold = 2.3
