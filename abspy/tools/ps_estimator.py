@@ -31,7 +31,7 @@ class pstimator(object):
             A single-row array of single T map.
             
         mask : numpy.ndarray
-            mask map
+            A single-row array of mask map
             
         Returns
         -------
@@ -41,12 +41,14 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape[0] == 1)
+        assert (mask.shape[0] == 1)
+        assert (maps.shape[1] == mask.shape[1])
         # fix resolution and apodization
         _nside = hp.get_nside(maps[0])
         # apodization
         if aposcale is None:
             aposcale = 1.0
-        _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
+        _apd_mask = nmt.mask_apodization(mask[0], aposcale, apotype='Smooth')
         _mapT = maps[0]
         # assemble NaMaster fields
         _f0 = nmt.NmtField(_apd_mask, [_mapT])
@@ -73,7 +75,7 @@ class pstimator(object):
             A two-row array array of two T maps.
             
         mask : numpy.ndarray
-            mask map
+            A single-row array pf mask map
             
         Returns
         -------
@@ -83,12 +85,14 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape[0] == 2)
+        assert (mask.shape[0] == 1)
+        assert (maps.shape[1] == mask.shape[1])
         # fix resolution and apodization
         _nside = hp.get_nside(maps[0])
         # apodization
         if aposcale is None:
             aposcale = 1.0
-        _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
+        _apd_mask = nmt.mask_apodization(mask[0], aposcale, apotype='Smooth')
         _mapT01 = maps[0]
         _mapT02 = maps[1]
         # assemble NaMaster fields
@@ -118,7 +122,7 @@ class pstimator(object):
             with polarization in CMB convention.
             
         mask : numpy.ndarray
-            mask map
+            A single-row array of mask map
             
         Returns
         -------
@@ -128,12 +132,14 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape[0] == 2)
+        assert (mask.shape[0] == 1)
+        assert (maps.shape[1] == mask.shape[1])
         # fix resolution and apodization
         _nside = hp.get_nside(maps[0])
         # apodization
         if aposcale is None:
             aposcale = 1.0
-        _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
+        _apd_mask = nmt.mask_apodization(mask[0], aposcale, apotype='Smooth')
         _mapQ = maps[0]
         _mapU = maps[1]
         # assemble NaMaster fields
@@ -162,7 +168,7 @@ class pstimator(object):
             with polarization in CMB convention.
             
         mask : numpy.ndarray
-            mask map
+            A single-row array of mask map
             
         Returns
         -------
@@ -172,12 +178,14 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape[0] == 4)
+        assert (mask.shape[0] == 1)
+        assert (maps.shape[1] == mask.shape[1])
         # fix resolution and apodization
         _nside = hp.get_nside(maps[0])
         # apodization
         if aposcale is None:
             aposcale = 1.0
-        _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
+        _apd_mask = nmt.mask_apodization(mask[0], aposcale, apotype='Smooth')
         _mapQ01 = maps[0]
         _mapU01 = maps[1]
         _mapQ02 = maps[2]
@@ -209,7 +217,7 @@ class pstimator(object):
             with polarization in CMB convention.
             
         mask : numpy.ndarray
-            mask map
+            A single-row array of mask map
             
         Returns
         -------
@@ -219,12 +227,14 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape[0] == 3)
+        assert (mask.shape[0] == 1)
+        assert (maps.shape[1] == mask.shape[1])
         # fix resolution and apodization
         _nside = hp.get_nside(maps[0])
         # apodization
         if aposcale is None:
             aposcale = 1.0
-        _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
+        _apd_mask = nmt.mask_apodization(mask[0], aposcale, apotype='Smooth')
         _mapT = maps[0]
         _mapQ = maps[1]
         _mapU = maps[2]
@@ -256,7 +266,7 @@ class pstimator(object):
             with polarization in CMB convention.
             
         mask : numpy.ndarray
-            mask map
+            A single-row array of mask map
             
         Returns
         -------
@@ -266,12 +276,14 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape[0] == 6)
+        assert (mask.shape[0] == 1)
+        assert (maps.shape[1] == mask.shape[1])
         # fix resolution and apodization
         _nside = hp.get_nside(maps[0])
         # apodization
         if aposcale is None:
             aposcale = 1.0
-        _apd_mask = nmt.mask_apodization(mask, aposcale, apotype='Smooth')
+        _apd_mask = nmt.mask_apodization(mask[0], aposcale, apotype='Smooth')
         _mapT01 = maps[0]
         _mapQ01 = maps[1]
         _mapU01 = maps[2]

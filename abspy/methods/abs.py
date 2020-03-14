@@ -274,7 +274,7 @@ class abssep(object):
             _RL = self.binaps(self._sigma)
         # prepare CMB f(ell, freq)
         _f = np.ones((self._bins,self._fsize), dtype=np.float64)
-        if (self._noise_flag):
+        if self._noise_flag:
             # Dl_ij = Dl_ij/sqrt(sigma_li,sigma_lj) + shift*f_li*f_lj
             for l in range(self._bins):
                 for i in range(self._fsize):
