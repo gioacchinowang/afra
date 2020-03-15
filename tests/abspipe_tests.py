@@ -14,7 +14,6 @@ class TestABSpipe(unittest.TestCase):
         self.assertEqual(test_pipe.nmap, 1)
         self.assertEqual(test_pipe.nside, 4)
         self.assertEqual(test_pipe._npix, 192)
-        self.assertEqual(test_pipe._resamp, 500)
         
     def test_sainity_Tmap(self):
         np.random.seed(234)
