@@ -45,7 +45,6 @@ class abspipe(object):
             Number of maps,
             if 1, taken as T maps only,
             if 2, taken as Q,U maps only,
-            if 3, taken as T,Q,U maps.
         
         nside : integer
             HEALPix Nside of inputs.
@@ -62,10 +61,8 @@ class abspipe(object):
         # method select dict with keys defined by (self._noise_flat, self._nmap)
         self._methodict = {(True,1): self.method_noisyT,
                            (True,2): self.method_noisyEB,
-                           (True,3): self.method_noisyTEB,
                            (False,1): self.method_pureT,
-                           (False,2): self.method_pureEB,
-                           (False,3): self.method_pureTEB}
+                           (False,2): self.method_pureEB}
 
     @property
     def signal(self):
@@ -183,18 +180,19 @@ class abspipe(object):
         # run a trial PS estimation
         _trial = _est.auto_t(self._signal[0,0].reshape(1,-1))
         _ellist = list(_trial[0])  # register angular modes
+        _wsp = _trial[-1]  # register workspace
         _nell = len(_ellist)  # know the number of angular modes
         # prepare total singal PS in the shape required by ABS method
         _signal_ps_t = np.zeros((_nell,self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
             # auto correlation
-            _tmp = _est.auto_t(self._signal[i])
+            _tmp = _est.auto_t(self._signal[i],_wsp)
             # assign results
             for k in range(_nell):
                 _signal_ps_t[k,i,i] = _tmp[1][k]
             # cross correlation
             for j in range(i+1,self._nfreq):
-                _tmp = _est.cross_t(np.vstack([self._signal[i],self._signal[j]]))
+                _tmp = _est.cross_t(np.vstack([self._signal[i],self._signal[j]]),_wsp)
                 for k in range(_nell):
                     _signal_ps_t[k,i,j] = _tmp[1][k]
                     _signal_ps_t[k,j,i] = _signal_ps_t[k,i,j]
@@ -205,21 +203,22 @@ class abspipe(object):
     def method_pureEB(self, psbin, absbin, shift, threshold):
         _est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
         # run a trial PS estimation
-        _trial = _est.auto_t(self._signal[0,0].reshape(1,-1))
+        _trial = _est.auto_eb(self._signal[0])
         _ellist = list(_trial[0])  # register angular modes
+        _wsp = _trial[-1]  # register workspace
         _nell = len(_ellist)  # know the number of angular modes
         _signal_ps_e = np.zeros((_nell,self._nfreq,self._nfreq),dtype=np.float64)
         _signal_ps_b = np.zeros((_nell,self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
             # auto corr
-            _tmp = _est.auto_eb(self._signal[i])
+            _tmp = _est.auto_eb(self._signal[i],_wsp)
             # assign results
             for k in range(_nell):
                 _signal_ps_e[k,i,i] = _tmp[1][k]
                 _signal_ps_b[k,i,i] = _tmp[2][k]
             # cross corr
             for j in range(i+1,self._nfreq):
-                _tmp = _est.cross_eb(np.vstack([self._signal[i],self._signal[j]]))
+                _tmp = _est.cross_eb(np.vstack([self._signal[i],self._signal[j]]),_wsp)
                 for k in range(_nell):
                     _signal_ps_e[k,i,j] = _tmp[1][k]
                     _signal_ps_b[k,i,j] = _tmp[2][k]
@@ -231,48 +230,9 @@ class abspipe(object):
         _rslt_e = _spt_e()
         _rslt_b = _spt_b()
         return (_rslt_e[0], _rslt_e[1], _rslt_b[1])
-    
-    def method_pureTEB(self, psbin, absbin, shift, threshold):
-        _est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
-        # run a trial PS estimation
-        _trial = _est.auto_t(self._signal[0,0].reshape(1,-1))
-        _ellist = list(_trial[0])  # register angular modes
-        _nell = len(_ellist)  # know the number of angular modes
-        _signal_ps_t = np.zeros((_nell,self._nfreq,self._nfreq),dtype=np.float64)
-        _signal_ps_e = np.zeros((_nell,self._nfreq,self._nfreq),dtype=np.float64)
-        _signal_ps_b = np.zeros((_nell,self._nfreq,self._nfreq),dtype=np.float64)
-        for i in range(self._nfreq):
-            # auto corr
-            _tmp = _est.auto_teb(self._signal[i])
-            # assign results
-            for k in range(_nell):
-                _signal_ps_t[k,i,i] = _tmp[1][k]
-                _signal_ps_e[k,i,i] = _tmp[2][k]
-                _signal_ps_b[k,i,i] = _tmp[3][k]
-            # cross corr
-            for j in range(i+1,self._nfreq):
-                _tmp = _est.cross_teb(np.vstack([self._signal[i],self._signal[j]]))
-                for k in range(_nell):
-                    _signal_ps_t[k,i,j] = _tmp[1][k]
-                    _signal_ps_e[k,i,j] = _tmp[2][k]
-                    _signal_ps_b[k,i,j] = _tmp[3][k]
-                    _signal_ps_t[k,j,i] = _signal_ps_t[k,i,j]
-                    _signal_ps_e[k,j,i] = _signal_ps_e[k,i,j]
-                    _signal_ps_b[k,j,i] = _signal_ps_b[k,i,j]
-        # send PS to ABS method
-        _spt_t = abssep(_signal_ps_t,modes=_ellist,bins=absbin,shift=shift,threshold=threshold)
-        _spt_e = abssep(_signal_ps_e,modes=_ellist,bins=absbin,shift=shift,threshold=threshold)
-        _spt_b = abssep(_signal_ps_b,modes=_ellist,bins=absbin,shift=shift,threshold=threshold)
-        _rslt_t = _spt_t()
-        _rslt_e = _spt_e()
-        _rslt_b = _spt_b()
-        return (_rslt_t[0], _rslt_t[1], _rslt_e[1], _rslt_b[1])
         
     def method_noisyT(self, psbin, absbin, shift, threshold):
         pass
         
     def method_noisyEB(self, psbin, absbin, shift, threshold):
-        pass
-
-    def method_noisyTEB(self, psbin, absbin, shift, threshold):
         pass

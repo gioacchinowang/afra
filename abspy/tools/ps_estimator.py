@@ -5,9 +5,9 @@ by default it requires the NaMaster package.
 import pymaster as nmt
 """
 For using other PS estimators,
-please do your own estimation pipeline.
+please modify the implementations below,
+without touching the API.
 """
-import healpy as hp
 import numpy as np
 import logging as log
 from abspy.tools.icy_decorator import icy
@@ -86,71 +86,90 @@ class pstimator(object):
             assert (psbin > 0)
             self._psbin = psbin
         
-    def auto_t(self, maps):
+    def auto_t(self, maps, wsp=None):
         """
         Auto PS,
-        apply NaMaster estimator to T (scalar) map with(out) masks,
-        requires NaMaster, healpy, numpy packages.
+        apply NaMaster estimator to T (scalar) map with(out) masks.
         
         Parameters
         ----------
         
         maps : numpy.ndarray
             A single-row array of single T map.
+            
+        wsp : (PS-estimator-defined) workspace
+            A template of mask-induced mode coupling matrix.
         
         Returns
         -------
         
         pseudo-PS results : tuple of numpy.ndarray
-            (ell, TT)
+            (ell, TT, wsp(if input wsp is None))
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (1,self._npix))
+        # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
-        _mapT = maps[0]
         # assemble NaMaster fields
-        _f0 = nmt.NmtField(_apd_mask, [_mapT])
+        _f0 = nmt.NmtField(_apd_mask, [maps[0]])
         _b = nmt.NmtBin(self._nside, nlb=self._psbin)
-        # MASTER estimator
-        _cl00 = nmt.compute_full_master(_f0, _f0, _b)  # scalar - scalar
-        return (_b.get_effective_ells(), _cl00[0])
+        # estimate PS
+        if wsp is None:
+            _w = nmt.NmtWorkspace()
+            _w.compute_coupling_matrix(_f0, _f0, _b)
+            _cl00c = nmt.compute_coupled_cell(_f0, _f0)
+            _cl00 = _w.decouple_cell(_cl00c)
+            return (_b.get_effective_ells(), _cl00[0], _w)
+        else:
+            _cl00c = nmt.compute_coupled_cell(_f0, _f0)
+            _cl00 = wsp.decouple_cell(_cl00c)
+            return (_b.get_effective_ells(), _cl00[0])
         
-    def cross_t(self, maps):
+        
+    def cross_t(self, maps, wsp=None):
         """
         Cross PS,
-        apply NaMaster estimator to T (scalar) map with(out) masks,
-        requires NaMaster, healpy, numpy packages.
+        apply NaMaster estimator to T (scalar) map with(out) masks.
         
         Parameters
         ----------
         
         maps : numpy.ndarray
             A two-row array array of two T maps.
+            
+        wsp : (PS-estimator-defined) workspace
+            A template of mask-induced mode coupling matrix.
         
         Returns
         -------
         
         pseudo-PS results : tuple of numpy.ndarray
-            (ell, TT)
+            (ell, TT, wsp(if input wsp is None))
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (2,self._npix))
+        # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
-        _mapT01 = maps[0]
-        _mapT02 = maps[1]
         # assemble NaMaster fields
-        _f01 = nmt.NmtField(_apd_mask, [_mapT01])
-        _f02 = nmt.NmtField(_apd_mask, [_mapT02])
-        _b = nmt.NmtBin(self._nside, nlb=self._psbin)
-        # MASTER estimator
-        _cl00 = nmt.compute_full_master(_f01, _f02, _b)  # scalar - scalar
-        return (_b.get_effective_ells(), _cl00[0])
+        _f01 = nmt.NmtField(_apd_mask, [maps[0]])
+        _f02 = nmt.NmtField(_apd_mask, [maps[1]])
+        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin)
+        # estimate PS
+        if wsp is None:
+            _w = nmt.NmtWorkspace()
+            _w.compute_coupling_matrix(_f01, _f02, _b)
+            _cl00c = nmt.compute_coupled_cell(_f01, _f02)
+            _cl00 = _w.decouple_cell(_cl00c)
+            return (_b.get_effective_ells(), _cl00[0], _w)
+        else:
+            _cl00c = nmt.compute_coupled_cell(_f01, _f02)
+            _cl00 = wsp.decouple_cell(_cl00c)
+            return (_b.get_effective_ells(), _cl00[0])
     
-    def auto_eb(self, maps):
+    def auto_eb(self, maps, wsp=None):
         """
         Auto PS,
-        apply NaMaster estimator to QU (spin-2) maps with(out) masks,
-        requires NaMaster, healpy, numpy packages.
+        apply NaMaster estimator to QU (spin-2) maps with(out) masks.
         
         Parameters
         ----------
@@ -158,30 +177,39 @@ class pstimator(object):
         maps : numpy.ndarray
             A two-row array of Q, U maps,
             with polarization in CMB convention.
+            
+        wsp : (PS-estimator-defined) workspace
+            A template of mask-induced mode coupling matrix.
         
         Returns
         -------
         
         pseudo-PS results : tuple of numpy.ndarray
-            (ell, EE, BB)
+            (ell, EE, BB, wsp(if input wsp is None))
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (2,self._npix))
+        # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
-        _mapQ = maps[0]
-        _mapU = maps[1]
         # assemble NaMaster fields
-        _f2 = nmt.NmtField(_apd_mask, [_mapQ, _mapU])
-        _b = nmt.NmtBin(self._nside, nlb=self._psbin)
-        # MASTER estimator
-        _cl22 = nmt.compute_full_master(_f2, _f2, _b)  # tensor - tensor
-        return (_b.get_effective_ells(), _cl22[0], _cl22[3])
+        _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]])
+        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin)
+        # estimate PS
+        if wsp is None:
+            _w = nmt.NmtWorkspace()
+            _w.compute_coupling_matrix(_f2, _f2, _b)
+            _cl22c = nmt.compute_coupled_cell(_f2, _f2)
+            _cl22 = _w.decouple_cell(_cl22c)
+            return (_b.get_effective_ells(), _cl22[0], _cl22[3], _w)
+        else:
+            _cl22c = nmt.compute_coupled_cell(_f2, _f2)
+            _cl22 = wsp.decouple_cell(_cl22c)
+            return (_b.get_effective_ells(), _cl22[0], _cl22[3])
         
-    def cross_eb(self, maps):
+    def cross_eb(self, maps, wsp=None):
         """
         Cross PS,
-        apply NaMaster estimator to QU (spin-2) maps with(out) masks,
-        requires NaMaster, healpy, numpy packages.
+        apply NaMaster estimator to QU (spin-2) maps with(out) masks.
         
         Parameters
         ----------
@@ -189,97 +217,32 @@ class pstimator(object):
         maps : numpy.ndarray
             A four-row array of Q, U maps, arranged as {Q1, U1, Q2, U2},
             with polarization in CMB convention.
+            
+        wsp : (PS-estimator-defined) workspace
+            A template of mask-induced mode coupling matrix.
           
         Returns
         -------
         
         pseudo-PS results : tuple of numpy.ndarray
-            (ell, EE, BB)
+            (ell, EE, BB, wsp(if input wsp is None))
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (4,self._npix))
+        # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
-        _mapQ01 = maps[0]
-        _mapU01 = maps[1]
-        _mapQ02 = maps[2]
-        _mapU02 = maps[3]
         # assemble NaMaster fields
-        _f21 = nmt.NmtField(_apd_mask, [_mapQ01, _mapU01])
-        _f22 = nmt.NmtField(_apd_mask, [_mapQ02, _mapU02])
-        _b = nmt.NmtBin(self._nside, nlb=self._psbin)
-        # MASTER estimator
-        _cl22 = nmt.compute_full_master(_f21, _f22, _b)  # tensor - tensor
-        return (_b.get_effective_ells(), _cl22[0], _cl22[3])
-    
-    def auto_teb(self, maps):
-        """
-        Auto PS,
-        apply NaMaster estimator to TQU maps with(out) masks,
-        requires NaMaster, healpy, numpy packages.
-        
-        Parameters
-        ----------
-        
-        maps : numpy.ndarray
-            A three-row array of T, Q, U maps,
-            with polarization in CMB convention.
-           
-        Returns
-        -------
-        
-        pseudo-PS results : tuple of numpy.ndarray
-            (ell, TT, EE, BB)
-        """
-        assert isinstance(maps, np.ndarray)
-        assert (maps.shape == (3,self._npix))
-        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
-        _mapT = maps[0]
-        _mapQ = maps[1]
-        _mapU = maps[2]
-        # assemble NaMaster fields
-        _f0 = nmt.NmtField(_apd_mask, [_mapT])
-        _f2 = nmt.NmtField(_apd_mask, [_mapQ, _mapU])
-        _b = nmt.NmtBin(self._nside, nlb=self._psbin)
-        # MASTER estimator
-        _cl00 = nmt.compute_full_master(_f0, _f0, _b)  # scalar - scalar
-        _cl22 = nmt.compute_full_master(_f2, _f2, _b)  # tensor - tensor
-        return (_b.get_effective_ells(), _cl00[0], _cl22[0], _cl22[3])
-        
-    def cross_teb(self, maps):
-        """
-        Cross PS,
-        apply NaMaster estimator to TQU maps with(out) masks,
-        requires NaMaster, healpy, numpy packages.
-        
-        Parameters
-        ----------
-        
-        maps : numpy.ndarray
-            A six-row array of T, Q, U maps, arranged as {T,Q,U,T,Q,U},
-            with polarization in CMB convention.
-        
-        Returns
-        -------
-        
-        pseudo-PS results : tuple of numpy.ndarray
-            (ell, TT, EE, BB)
-        """
-        assert isinstance(maps, np.ndarray)
-        assert (maps.shape == (6,self._npix))
-        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
-        _mapT01 = maps[0]
-        _mapQ01 = maps[1]
-        _mapU01 = maps[2]
-        _mapT02 = maps[3]
-        _mapQ02 = maps[4]
-        _mapU02 = maps[5]
-        # assemble NaMaster fields
-        _f01 = nmt.NmtField(_apd_mask, [_mapT01])
-        _f21 = nmt.NmtField(_apd_mask, [_mapQ01, _mapU01])
-        _f02 = nmt.NmtField(_apd_mask, [_mapT02])
-        _f22 = nmt.NmtField(_apd_mask, [_mapQ02, _mapU02])
-        _b = nmt.NmtBin(self._nside, nlb=self._psbin)
-        # MASTER estimator
-        _cl00 = nmt.compute_full_master(_f01, _f02, _b)  # scalar - scalar
-        _cl22 = nmt.compute_full_master(_f21, _f22, _b)  # tensor - tensor
-        return (_b.get_effective_ells(), _cl00[0], _cl22[0], _cl22[3])
+        _f21 = nmt.NmtField(_apd_mask, [maps[0], maps[1]])
+        _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]])
+        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin)
+        # estimate PS
+        if wsp is None:
+            _w = nmt.NmtWorkspace()
+            _w.compute_coupling_matrix(_f21, _f22, _b)
+            _cl22c = nmt.compute_coupled_cell(_f21, _f22)
+            _cl22 = _w.decouple_cell(_cl22c)
+            return (_b.get_effective_ells(), _cl22[0], _cl22[3], _w)
+        else:
+            _cl22c = nmt.compute_coupled_cell(_f21, _f22)
+            _cl22 = wsp.decouple_cell(_cl22c)
+            return (_b.get_effective_ells(), _cl22[0], _cl22[3])

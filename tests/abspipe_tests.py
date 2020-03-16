@@ -32,15 +32,6 @@ class TestABSpipe(unittest.TestCase):
                             nmap=2,
                             nside=4)
         test_result = test_pipe(psbin=1,absbin=5)
-        
-    def test_sainity_TQUmap(self):
-        np.random.seed(234)
-        test_signal = np.random.rand(4,3,192)
-        test_pipe = abspipe(test_signal,
-                            nfreq=4,
-                            nmap=3,
-                            nside=4)
-        test_result = test_pipe(psbin=1,absbin=5)
 
 if __name__ == '__main__':
     unittest.main()
