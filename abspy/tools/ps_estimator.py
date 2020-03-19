@@ -192,7 +192,7 @@ class pstimator(object):
         # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
         # assemble NaMaster fields
-        _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]])
+        _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
         _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin)
         # estimate PS
         if wsp is None:
@@ -232,8 +232,8 @@ class pstimator(object):
         # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
         # assemble NaMaster fields
-        _f21 = nmt.NmtField(_apd_mask, [maps[0], maps[1]])
-        _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]])
+        _f21 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
+        _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]], purify_e=False, purify_b=True)
         _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin)
         # estimate PS
         if wsp is None:
