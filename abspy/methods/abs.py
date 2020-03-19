@@ -293,6 +293,7 @@ class abssep(object):
             # eigvec[:,i] corresponds to eigval[i]
             # note that eigen values may be complex
             eigval, eigvec = np.linalg.eig(_DL[ell])
+            assert (all(v > 0 for v in eigval))
             log.debug('@ abs::__call__, angular mode '+str(self.binell[ell])+' with eigen vals '+str(eigval))
             for i in range(self._fsize):
                 eigvec[:,i] /= np.linalg.norm(eigvec[:,i])**2

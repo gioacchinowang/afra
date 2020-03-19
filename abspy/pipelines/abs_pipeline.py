@@ -179,7 +179,7 @@ class abspipe(object):
         
         Returns
         -------
-        angular modes, target angular power spectrum : (list, list)
+        angular modes, target angular power spectrum : tuple of lists
         """
         log.debug('@ abspipe::run')
         assert isinstance(psbin, int)
@@ -192,6 +192,10 @@ class abspipe(object):
     def method_pureT(self, psbin, absbin, shift, threshold):
         """
         CMB T mode extraction without noise.
+        
+        Returns
+        -------
+        angular modes, T-mode PS
         """
         _est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
         # run a trial PS estimation
@@ -220,6 +224,10 @@ class abspipe(object):
     def method_noisyT(self, psbin, absbin, shift, threshold):
         """
         CMB T mode extraction with noise.
+        
+        Returns
+        -------
+        angular modes, T-mode PS, T-mode PS std
         """
         # estimate noise PS and noise RMS
         _est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
@@ -296,7 +304,11 @@ class abspipe(object):
     
     def method_pureEB(self, psbin, absbin, shift, threshold):
         """
-        CMB E and B mode extraction without noise.
+        CMB E and B modes extraction without noise.
+        
+        Returns
+        -------
+        angular modes, E-mode PS, B-mode
         """
         _est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
         # run a trial PS estimation
@@ -330,7 +342,11 @@ class abspipe(object):
         
     def method_noisyEB(self, psbin, absbin, shift, threshold):
         """
-        CMB E and B mode extraction with noise.
+        CMB E and B modes extraction with noise.
+        
+        Returns
+        -------
+        angular modes, E-mode PS, E-mode PS std, B-mode PS, B-mode PS std
         """
         # estimate noise PS and noise RMS
         _est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
