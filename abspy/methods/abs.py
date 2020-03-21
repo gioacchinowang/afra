@@ -34,7 +34,7 @@ class abssep(object):
             * N_freq: number of frequency bands
             * N_modes: number of angular modes
             
-        nrms : numpy.ndarray
+        sigma : numpy.ndarray
             The RMS of ensemble (instrumental) noise AUTO power-spectrum,
             with global size (N_modes, N_freq).
             * N_freq: number of frequency bands
