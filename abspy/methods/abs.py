@@ -1,19 +1,17 @@
-"""
-The ABS separator class.
-
-Author:
-- Jian Yao (STJU)
-- Jiaxin Wang (SJTU) jiaxin.wang@sjtu.edu.cn
-"""
-
 import logging as log
 import numpy as np
-from copy import deepcopy
 from abspy.tools.icy_decorator import icy
-
+from abspy.tools.binning import binell, binaps, bincps
 
 @icy
 class abssep(object):
+    """
+    The ABS separator class.
+
+    Author:
+    - Jian Yao (STJU)
+    - Jiaxin Wang (SJTU) jiaxin.wang@sjtu.edu.cn
+    """
     
     def __init__(self, signal, noise=None, sigma=None, bins=None, modes=None, shift=0.0, threshold=0.0):
         """
@@ -166,142 +164,51 @@ class abssep(object):
         assert isinstance(noise_flag, bool)
         self._noise_flag = noise_flag
         log.debug('ABS with noise? '+str(self._noise_flag))
-        
-    @property
-    def binell(self):
-        """
-        Central angular modes "ell" of binned average.
-        
-        Returns
-        -------
-        
-        Central angular modes position : numpy.ndarray.
-        """
-        log.debug('@ abs::binell')
-        _lnew = list()
-        _lres = self._lsize%self._bins
-        _lmod = self._lsize//self._bins
-        # binned average for each single spectrum
-        for i in range(self._bins):
-            _begin = min(_lres,i)+i*_lmod
-            _end = min(_lres,i) + (i+1)*_lmod + int(i < _lres)
-            _lnew.append(0.5*(self._modes[_begin]+self._modes[_end-1]))
-        return _lnew
-
-    def bincps(self, cps):
-        """
-        Binned average of CROSS-power-spectrum and convert it into CROSS-Dl (band power).
-        
-        Parameters
-        ----------
-        
-        cps : numpy.ndarray
-            cross power spectrum
-            
-        Returns
-        -------
-            
-        CROSS-Dl with bin average : numpy.ndarray
-        """
-        log.debug('@ abs::bincps')
-        assert isinstance(cps, np.ndarray)
-        assert (cps.shape[0] == self._lsize)
-        assert (cps.shape[1] == self._fsize)
-        assert (cps.shape[1] == cps.shape[2])
-        _lres = self._lsize%self._bins
-        _lmod = self._lsize//self._bins
-        _result = np.empty((self._bins, self._fsize, self._fsize))
-        _cps = deepcopy(cps)  # avoid mem issue
-        # binned average for each single spectrum
-        for i in range(self._bins):
-            _begin = min(_lres,i)+i*_lmod
-            _end = min(_lres,i) + (i+1)*_lmod + int(i < _lres)
-            # convert Cl into Dl for each single spectrum
-            _effl = 0.5*(self._modes[_begin]+self._modes[_end-1])
-            _result[i,:,:] = np.mean(_cps[_begin:_end,:,:], axis=0)*0.5*_effl*(_effl+1)/np.pi
-        return _result
-    
-    def binaps(self, aps):
-        """
-        Binned average of AUTO-power-spectrum Cl and convert it into AUTO-Dl (band power).
-        
-        Parameters
-        ----------
-        
-        aps : numpy.ndarray
-            auto power spectrum
-        
-        Returns
-        -------
-        
-        AUTO-Dl with binned average : numpy.ndarray
-        """
-        log.debug('@ abs::binaps')
-        assert isinstance(aps, np.ndarray)
-        assert (aps.shape[0] == self._lsize)
-        assert (aps.shape[1] == self._fsize)
-        _lres = self._lsize%self._bins
-        _lmod = self._lsize//self._bins
-        # allocate results
-        _result = np.empty((self._bins, self._fsize))
-        _aps = deepcopy(aps)
-        # binned average for each single spectrum
-        for i in range(self._bins):
-            _begin = min(_lres,i)+i*_lmod
-            _end = min(_lres,i) + (i+1)*_lmod + int(i < _lres)
-            _effl = 0.5*(self._modes[_begin]+self._modes[_end-1])
-            # convert Cl into Dl for each single spectrum
-            _result[i,:] = np.mean(_aps[_begin:_end,:], axis=0)*0.5*_effl*(_effl+1)/np.pi
-        return _result
     
     def __call__(self):
-        log.debug('@ abs::__call__')
-        return self.run()
-        
-    def run(self):
         """
         ABS separator class call function.
         
         Returns
         -------
+        
         angular modes, target angular power spectrum : (list, list)
         """
-        log.debug('@ abs::run')
+        log.debug('@ abs::__call__')
         # binned average, converted to band power
-        _DL = self.bincps(self._signal)
+        DL = bincps(self._signal,self._modes,self._bins)
         if (self._noise_flag):
-            _NL = self.bincps(self._noise)
-            _RL = self.binaps(self._sigma)
+            NL = bincps(self._noise,self._modes,self._bins)
+            RL = binaps(self._sigma,self._modes,self._bins)
         # prepare CMB f(ell, freq)
-        _f = np.ones((self._bins,self._fsize), dtype=np.float64)
+        f = np.ones((self._bins,self._fsize), dtype=np.float64)
         if self._noise_flag:
             # Dl_ij = Dl_ij/sqrt(sigma_li,sigma_lj) + shift*f_li*f_lj
             for l in range(self._bins):
                 for i in range(self._fsize):
-                    _f[l,i] /= np.sqrt(_RL[l,i])  # rescal f according to noise RMS
+                    f[l,i] /= np.sqrt(RL[l,i])  # rescal f according to noise RMS
                     for j in range(self._fsize):
-                        _DL[l,i,j] = (_DL[l,i,j] - _NL[l,i,j])/np.sqrt(_RL[l,i]*_RL[l,j]) + self._shift*_f[l,i]*_f[l,j]
+                        DL[l,i,j] = (DL[l,i,j] - NL[l,i,j])/np.sqrt(RL[l,i]*RL[l,j]) + self._shift*f[l,i]*f[l,j]
         else:
             # Dl_ij = Dl_ij + shift*f_li*f_lj
             for l in range(self._bins):
                 for i in range(self._fsize):
                     for j in range(self._fsize):
-                        _DL[l,i,j] += self._shift*_f[l,i]*_f[l,j]
+                        DL[l,i,j] += self._shift*f[l,i]*f[l,j]
         # find eign at each angular mode
-        _BL = list()
+        BL = list()
         for ell in range(self._bins):
             # eigvec[:,i] corresponds to eigval[i]
             # note that eigen values may be complex
-            eigval, eigvec = np.linalg.eig(_DL[ell])
+            eigval, eigvec = np.linalg.eig(DL[ell])
             #assert (all(v > 0 for v in eigval))
-            log.debug('@ abs::__call__, angular mode '+str(self.binell[ell])+' with eigen vals '+str(eigval))
             for i in range(self._fsize):
                 eigvec[:,i] /= np.linalg.norm(eigvec[:,i])**2
-            _tmp = 0
+            tmp = 0
             for i in range(self._fsize):
                 if eigval[i] >= self._threshold:
-                    _G = np.dot(_f[ell], eigvec[:,i])
-                    _tmp += (_G**2/eigval[i])
-            _BL.append(1.0/_tmp - self._shift)
-        return (self.binell, _BL)
+                    G = np.dot(f[ell], eigvec[:,i])
+                    tmp += (G**2/eigval[i])
+            BL.append(1.0/tmp - self._shift)
+        return (binell(self._modes, self._bins), BL)
         

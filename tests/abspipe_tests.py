@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
-from abspy.pipelines.abs_pipeline import abspipe
+from abspy import abspipe
+
 
 class TestABSpipe(unittest.TestCase):
     
