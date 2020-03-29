@@ -8,7 +8,7 @@ class PurifyB(object):
         ----------
         
         mask : binary, 1 and 0;
-        maps: IQU maps; The Mask_0() and hp.map2alm() require IQU as input.
+        maps: IQU maps; The Mask_01() and hp.map2alm() require IQU as input.
         
         Example
         ----------
@@ -22,7 +22,7 @@ class PurifyB(object):
         self.mask_index = self.pix_list[np.where(mask < 1)] # the pixel index of the masked index
         self.avai_index = self.pix_list[np.where(mask == 1)] # the pixel index of the available index
         
-    def Mask_0(self, maps_raw):
+    def Mask_01(self, maps_raw):
     
         '''
         Mask the maps. The masked values are equal to 0.
@@ -54,13 +54,13 @@ class PurifyB(object):
         
         ### get the template of E to B leakage 
         
-        alm_ma = hp.map2alm(Mask_0(self.maps)) #alms of the masked maps
+        alm_ma = hp.map2alm(self.Mask_01(self.maps)) #alms of the masked maps
 
         B0 = hp.alm2map(alm_ma[2], nside = self.nside, verbose = False) # corrupted B map
         
         alm_ma[0] = 0; alm_ma[2] = 0; map_E = hp.alm2map(alm_ma, nside = self.nside, verbose = False) # IQU of corrupted E mode only
 
-        alm_new = hp.map2alm(Mask_0(map_E)) # alms of the IUQ from only E-mode 
+        alm_new = hp.map2alm(self.Mask_01(map_E)) # alms of the IUQ from only E-mode 
 
         BT = hp.alm2map(alm_new[2], nside = self.nside, verbose = False) # template of E to B leakage 
         
