@@ -1,3 +1,6 @@
+import healpy as hp
+import numpy as np
+
 class PurifyB(object):
    
     
@@ -74,7 +77,7 @@ class PurifyB(object):
         a0  = my - mx*a1 
         resi  = y - a0 - a1*x
 
-        map0 = np.zeros(12*nside**2);
+        map0 = np.zeros(12*self.nside**2);
         map0[self.avai_index] = resi
 
         return map0
