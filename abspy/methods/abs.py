@@ -201,6 +201,7 @@ class abssep(object):
             # eigvec[:,i] corresponds to eigval[i]
             # note that eigen values may be complex
             eigval, eigvec = np.linalg.eig(DL[ell])
+            eigval = np.abs(eigval)
             #assert (all(v > 0 for v in eigval))
             for i in range(self._fsize):
                 eigvec[:,i] /= np.linalg.norm(eigvec[:,i])**2

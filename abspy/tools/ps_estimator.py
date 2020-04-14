@@ -119,11 +119,11 @@ class pstimator(object):
             _w.compute_coupling_matrix(_f0, _f0, _b)
             _cl00c = nmt.compute_coupled_cell(_f0, _f0)
             _cl00 = _w.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), _cl00[0], _w)
+            return (_b.get_effective_ells(), np.abs(_cl00[0]), _w)
         else:
             _cl00c = nmt.compute_coupled_cell(_f0, _f0)
             _cl00 = wsp.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), _cl00[0])
+            return (_b.get_effective_ells(), np.abs(_cl00[0]))
         
         
     def cross_t(self, maps, wsp=None):
@@ -160,11 +160,11 @@ class pstimator(object):
             _w.compute_coupling_matrix(_f01, _f02, _b)
             _cl00c = nmt.compute_coupled_cell(_f01, _f02)
             _cl00 = _w.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), _cl00[0], _w)
+            return (_b.get_effective_ells(), np.abs(_cl00[0]), _w)
         else:
             _cl00c = nmt.compute_coupled_cell(_f01, _f02)
             _cl00 = wsp.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), _cl00[0])
+            return (_b.get_effective_ells(), np.abs(_cl00[0]))
     
     def auto_eb(self, maps, wsp=None):
         """
@@ -200,11 +200,11 @@ class pstimator(object):
             _w.compute_coupling_matrix(_f2, _f2, _b)
             _cl22c = nmt.compute_coupled_cell(_f2, _f2)
             _cl22 = _w.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), _cl22[0], _cl22[3], _w)
+            return (_b.get_effective_ells(), np.abs(_cl22[0]), np.abs(_cl22[3]), _w)
         else:
             _cl22c = nmt.compute_coupled_cell(_f2, _f2)
             _cl22 = wsp.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), _cl22[0], _cl22[3])
+            return (_b.get_effective_ells(), np.abs(_cl22[0]), np.abs(_cl22[3]))
         
     def cross_eb(self, maps, wsp=None):
         """
@@ -241,8 +241,8 @@ class pstimator(object):
             _w.compute_coupling_matrix(_f21, _f22, _b)
             _cl22c = nmt.compute_coupled_cell(_f21, _f22)
             _cl22 = _w.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), _cl22[0], _cl22[3], _w)
+            return (_b.get_effective_ells(), np.abs(_cl22[0]), np.abs(_cl22[3]), _w)
         else:
             _cl22c = nmt.compute_coupled_cell(_f21, _f22)
             _cl22 = wsp.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), _cl22[0], _cl22[3])
+            return (_b.get_effective_ells(), np.abs(_cl22[0]), np.abs(_cl22[3]))
