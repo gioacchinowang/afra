@@ -214,7 +214,8 @@ class abspipe(object):
                     signal_ps_t[k,i,j] = tmp[1][k]
                     signal_ps_t[k,j,i] = signal_ps_t[k,i,j]
         # send PS to ABS method
-        spt_t = abssep(signal_ps_t,modes=ellist,bins=absbin,shift=shift,threshold=threshold)
+        safe_absbin = min(nell, absbin)
+        spt_t = abssep(signal_ps_t,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
         return spt_t()
         
     def method_noisyT(self, psbin, absbin, shift, threshold):
@@ -259,7 +260,7 @@ class abspipe(object):
                     tmp = est.cross_t(noise,wsp)
                     for k in range(nell):
                         noise_ps_t[k,i,j] += tmp[1][k]
-                        noise_ps_t[k,j,i] += noise_ps_t[k,i,j]
+                        noise_ps_t[k,j,i] += tmp[1][k]
         # get noise PS mean and rms
         for l in range(nell):
             for i in range(self._nfreq):
@@ -289,9 +290,10 @@ class abspipe(object):
                     tmp = est.cross_t(noise,wsp)  # noise += signal
                     for k in range(nell):
                         signal_ps_t[k,i,j] = tmp[1][k]
-                        signal_ps_t[k,j,i] = signal_ps_t[k,i,j]
+                        signal_ps_t[k,j,i] = tmp[1][k]
             # send PS to ABS method
-            spt_t = abssep(signal_ps_t,noise_ps_t,noise_rms_t,modes=ellist,bins=absbin,shift=shift,threshold=threshold)
+            safe_absbin = min(nell, absbin)
+            spt_t = abssep(signal_ps_t,noise_ps_t,noise_rms_t,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
             rslt_t = spt_t()
             rslt_ell = rslt_t[0]
             rslt_Dt += rslt_t[1]
@@ -329,11 +331,12 @@ class abspipe(object):
                 for k in range(nell):
                     signal_ps_e[k,i,j] = tmp[1][k]
                     signal_ps_b[k,i,j] = tmp[2][k]
-                    signal_ps_e[k,j,i] = signal_ps_e[k,i,j]
-                    signal_ps_b[k,j,i] = signal_ps_b[k,i,j]
+                    signal_ps_e[k,j,i] = tmp[1][k]
+                    signal_ps_b[k,j,i] = tmp[2][k]
         # send PS to ABS method
-        spt_e = abssep(signal_ps_e,modes=ellist,bins=absbin,shift=shift,threshold=threshold)
-        spt_b = abssep(signal_ps_b,modes=ellist,bins=absbin,shift=shift,threshold=threshold)
+        safe_absbin = min(nell, absbin)
+        spt_e = abssep(signal_ps_e,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
+        spt_b = abssep(signal_ps_b,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
         rslt_e = spt_e()
         rslt_b = spt_b()
         return (rslt_e[0], rslt_e[1], rslt_b[1])
@@ -387,8 +390,8 @@ class abspipe(object):
                     for k in range(nell):
                         noise_ps_e[k,i,j] += tmp[1][k]
                         noise_ps_b[k,i,j] += tmp[2][k]
-                        noise_ps_e[k,j,i] += noise_ps_e[k,i,j]
-                        noise_ps_b[k,j,i] += noise_ps_b[k,i,j]
+                        noise_ps_e[k,j,i] += tmp[1][k]
+                        noise_ps_b[k,j,i] += tmp[2][k]
         # get noise PS mean and rms
         for l in range(nell):
             for i in range(self._nfreq):
@@ -426,11 +429,12 @@ class abspipe(object):
                     for k in range(nell):
                         signal_ps_e[k,i,j] = tmp[1][k]
                         signal_ps_b[k,i,j] = tmp[2][k]
-                        signal_ps_e[k,j,i] = signal_ps_e[k,i,j]
-                        signal_ps_b[k,j,i] = signal_ps_b[k,i,j]
+                        signal_ps_e[k,j,i] = tmp[1][k]
+                        signal_ps_b[k,j,i] = tmp[2][k]
             # send PS to ABS method
-            spt_e = abssep(signal_ps_e,noise_ps_e,noise_rms_e,modes=ellist,bins=absbin,shift=shift,threshold=threshold)
-            spt_b = abssep(signal_ps_b,noise_ps_b,noise_rms_b,modes=ellist,bins=absbin,shift=shift,threshold=threshold)
+            safe_absbin = min(nell, absbin)
+            spt_e = abssep(signal_ps_e,noise_ps_e,noise_rms_e,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
+            spt_b = abssep(signal_ps_b,noise_ps_b,noise_rms_b,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
             rslt_e = spt_e()
             rslt_b = spt_b()
             rslt_ell = rslt_e[0]

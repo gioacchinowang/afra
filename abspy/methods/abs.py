@@ -187,6 +187,7 @@ class abssep(object):
             for l in range(self._bins):
                 for i in range(self._fsize):
                     f[l,i] /= np.sqrt(RL[l,i])  # rescal f according to noise RMS
+                for i in range(self._fsize):
                     for j in range(self._fsize):
                         DL[l,i,j] = (DL[l,i,j] - NL[l,i,j])/np.sqrt(RL[l,i]*RL[l,j]) + self._shift*f[l,i]*f[l,j]
         else:
