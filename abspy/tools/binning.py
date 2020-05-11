@@ -34,7 +34,7 @@ def binell(modes, bins):
     
 def bincps(cps, modes, bins):
     """
-    Binned average of CROSS-power-spectrum and convert it into CROSS-Dl (band power).
+    Binned average of CROSS-power-spectrum (band power).
     
     Parameters
     ----------
@@ -63,18 +63,19 @@ def bincps(cps, modes, bins):
     lmod = len(modes)//bins
     result = np.empty((bins, cps.shape[1], cps.shape[2]))
     cps_cp = deepcopy(cps)  # avoid mem issue
+    for i in range(len(modes)):
+        cps_cp[i] *= 2.*np.pi/(modes[i]*(modes[i]+1))
     # binned average for each single spectrum
     for i in range(bins):
         begin = min(lres,i)+i*lmod
         end = min(lres,i) + (i+1)*lmod + int(i < lres)
-        # convert Cl into Dl for each single spectrum
         effl = 0.5*(modes[begin]+modes[end-1])
         result[i,:,:] = np.mean(cps_cp[begin:end,:,:], axis=0)*0.5*effl*(effl+1)/np.pi
     return result
 
 def binaps(aps, modes, bins):
     """
-    Binned average of AUTO-power-spectrum Cl and convert it into AUTO-Dl (band power).
+    Binned average of AUTO-power-spectrum (band power).
     
     Parameters
     ----------
@@ -101,11 +102,12 @@ def binaps(aps, modes, bins):
     # allocate results
     result = np.empty((bins, aps.shape[1]))
     aps_cp = deepcopy(aps)
+    for i in range(len(modes)):
+        aps_cp[i] *= 2.*np.pi/(modes[i]*(modes[i]+1))
     # binned average for each single spectrum
     for i in range(bins):
         begin = min(lres,i)+i*lmod
         end = min(lres,i) + (i+1)*lmod + int(i < lres)
         effl = 0.5*(modes[begin]+modes[end-1])
-        # convert Cl into Dl for each single spectrum
         result[i,:] = np.mean(aps_cp[begin:end,:], axis=0)*0.5*effl*(effl+1)/np.pi
     return result

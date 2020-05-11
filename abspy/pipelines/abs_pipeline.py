@@ -15,7 +15,7 @@ class abspipe(object):
     - Jiaxin Wang (SJTU) jiaxin.wang@sjtu.edu.cn
     """
     
-    def __init__(self, signal, nfreq, nmap, nside, variance=None, mask=None):
+    def __init__(self, signal, nfreq, nmap, nside, variance=None, mask=None, fwhms=None):
         """
         The ABS pipeline for extracting CMB power-spectrum band power,
         according to given measured sky maps at various frequency bands.
@@ -49,12 +49,16 @@ class abspipe(object):
             
         nsamp : integer
             Noise resampling size (hidden parameter, by default is 100).
+            
+        fwhms : list, tuple
+            FWHM of gaussian beams for each frequency
         """
         log.debug('@ abspipe::__init__')
         #
         self.nfreq = nfreq
         self.nmap = nmap
         self.nside = nside
+        self.fwhms = fwhms
         #
         self.signal = signal
         self.variance = variance
@@ -94,6 +98,10 @@ class abspipe(object):
     @property
     def nsamp(self):
         return self._nsamp
+        
+    @property
+    def fwhms(self):
+        return self._fwhms
     
     @nfreq.setter
     def nfreq(self, nfreq):
@@ -151,6 +159,16 @@ class abspipe(object):
         self._nsamp = nsamp
         log.debug('resampling size set')
         
+    @fwhms.setter
+    def fwhms(self, fwhms):
+        if fwhms is None:
+            self._fwhms = [fwhms]*self._nfreq
+        else:
+            assert isinstance(fwhms, (list,tuple))
+            assert (len(fwhms) == self._nfreq)
+            self._fwhms = fwhms
+        log.debug('fwhms loaded')
+        
     def __call__(self, psbin, absbin, shift=0.0, threshold=0.0):
         """
         ABS pipeline class call function.
@@ -193,23 +211,23 @@ class abspipe(object):
         -------
         angular modes, T-mode PS
         """
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
         # run a trial PS estimation
         trial = est.auto_t(self._signal[0,0].reshape(1,-1))
         ellist = list(trial[0])  # register angular modes
-        wsp = trial[-1]  # register workspace
+        #wsp = trial[-1]  # register workspace
         nell = len(ellist)  # know the number of angular modes
         # prepare total singal PS in the shape required by ABS method
         signal_ps_t = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
             # auto correlation
-            tmp = est.auto_t(self._signal[i],wsp)
+            tmp = est.auto_t(self._signal[i],fwhms=self._fwhms[i])
             # assign results
             for k in range(nell):
                 signal_ps_t[k,i,i] = tmp[1][k]
             # cross correlation
             for j in range(i+1,self._nfreq):
-                tmp = est.cross_t(np.vstack([self._signal[i],self._signal[j]]),wsp)
+                tmp = est.cross_t(np.vstack([self._signal[i],self._signal[j]]),fwhms=[self._fwhms[i],self._fwhms[j]])
                 for k in range(nell):
                     signal_ps_t[k,i,j] = tmp[1][k]
                     signal_ps_t[k,j,i] = signal_ps_t[k,i,j]
@@ -228,11 +246,11 @@ class abspipe(object):
         angular modes, T-mode PS, T-mode PS std
         """
         # estimate noise PS and noise RMS
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
         # run a trial PS estimation
         trial = est.auto_t(self._signal[0,0].reshape(1,-1))
         ellist = list(trial[0])  # register angular modes
-        wsp = trial[-1]  # register workspace
+        #wsp = trial[-1]  # register workspace
         nell = len(ellist)  # know the number of angular modes
         # allocate
         noise_ps_t = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
@@ -246,7 +264,7 @@ class abspipe(object):
                     if self._mask[0,p]:
                         noise[0,p] = np.random.normal(0,np.sqrt(self._variance[i,0,p]))
                 # auto correlation
-                tmp = est.auto_t(noise[0].reshape(1,-1),wsp)
+                tmp = est.auto_t(noise[0].reshape(1,-1),fwhms=self._fwhms[i])
                 # assign results
                 for k in range(nell):
                     noise_ps_t[k,i,i] += tmp[1][k]
@@ -257,7 +275,7 @@ class abspipe(object):
                     for p in range(self._npix):
                         if self._mask[0,p]:
                             noise[1,p] = np.random.normal(0,np.sqrt(self._variance[j,0,p]))
-                    tmp = est.cross_t(noise,wsp)
+                    tmp = est.cross_t(noise,fwhms=[self._fwhms[i],self._fwhms[j]])
                     for k in range(nell):
                         noise_ps_t[k,i,j] += tmp[1][k]
                         noise_ps_t[k,j,i] += tmp[1][k]
@@ -277,7 +295,7 @@ class abspipe(object):
                     if self._mask[0,p]:
                         noise[0,p] = self._signal[i,0,p] + np.random.normal(0,np.sqrt(self._variance[i,0,p]))
                 # auto correlation
-                tmp = est.auto_t(noise[0].reshape(1,-1),wsp)  # noise += signal
+                tmp = est.auto_t(noise[0].reshape(1,-1),fwhms=self._fwhms[i])  # noise += signal
                 # assign results
                 for k in range(nell):
                     signal_ps_t[k,i,i] = tmp[1][k]
@@ -287,7 +305,7 @@ class abspipe(object):
                     for p in range(self._npix):
                         if self._mask[0,p]:
                             noise[1,p] = self._signal[j,0,p] + np.random.normal(0,np.sqrt(self._variance[j,0,p]))
-                    tmp = est.cross_t(noise,wsp)  # noise += signal
+                    tmp = est.cross_t(noise,fwhms=[self._fwhms[i],self._fwhms[j]])  # noise += signal
                     for k in range(nell):
                         signal_ps_t[k,i,j] = tmp[1][k]
                         signal_ps_t[k,j,i] = tmp[1][k]
@@ -310,24 +328,24 @@ class abspipe(object):
         
         angular modes, E-mode PS, B-mode
         """
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
         # run a trial PS estimation
         trial = est.auto_eb(self._signal[0])
         ellist = list(trial[0])  # register angular modes
-        wsp = trial[-1]  # register workspace
+        #wsp = trial[-1]  # register workspace
         nell = len(ellist)  # know the number of angular modes
         signal_ps_e = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
         signal_ps_b = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
             # auto corr
-            tmp = est.auto_eb(self._signal[i],wsp)
+            tmp = est.auto_eb(self._signal[i],fwhms=self._fwhms[i])
             # assign results
             for k in range(nell):
                 signal_ps_e[k,i,i] = tmp[1][k]
                 signal_ps_b[k,i,i] = tmp[2][k]
             # cross corr
             for j in range(i+1,self._nfreq):
-                tmp = est.cross_eb(np.vstack([self._signal[i],self._signal[j]]),wsp)
+                tmp = est.cross_eb(np.vstack([self._signal[i],self._signal[j]]),fwhms=[self._fwhms[i],self._fwhms[j]])
                 for k in range(nell):
                     signal_ps_e[k,i,j] = tmp[1][k]
                     signal_ps_b[k,i,j] = tmp[2][k]
@@ -351,11 +369,11 @@ class abspipe(object):
         angular modes, E-mode PS, E-mode PS std, B-mode PS, B-mode PS std
         """
         # estimate noise PS and noise RMS
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=1.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
         # run a trial PS estimation
         trial = est.auto_eb(self._signal[0])
         ellist = list(trial[0])  # register angular modes
-        wsp = trial[-1]  # register workspace
+        #wsp = trial[-1]  # register workspace
         nell = len(ellist)  # know the number of angular modes
         # allocate
         noise_ps_e = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
@@ -372,7 +390,7 @@ class abspipe(object):
                         noise[0,p] = np.random.normal(0,np.sqrt(self._variance[i,0,p]))
                         noise[1,p] = np.random.normal(0,np.sqrt(self._variance[i,1,p]))
                 # auto correlation
-                tmp = est.auto_eb(noise[:2],wsp)
+                tmp = est.auto_eb(noise[:2],fwhms=self._fwhms[i])
                 # assign results
                 for k in range(nell):
                     noise_ps_e[k,i,i] += tmp[1][k]
@@ -386,7 +404,7 @@ class abspipe(object):
                         if self._mask[0,p]:
                             noise[2,p] = np.random.normal(0,np.sqrt(self._variance[j,0,p]))
                             noise[3,p] = np.random.normal(0,np.sqrt(self._variance[j,1,p]))
-                    tmp = est.cross_eb(noise,wsp)
+                    tmp = est.cross_eb(noise,fwhms=[self._fwhms[i],self._fwhms[j]])
                     for k in range(nell):
                         noise_ps_e[k,i,j] += tmp[1][k]
                         noise_ps_b[k,i,j] += tmp[2][k]
@@ -413,7 +431,7 @@ class abspipe(object):
                         noise[0,p] = self._signal[i,0,p] + np.random.normal(0,np.sqrt(self._variance[i,0,p]))
                         noise[1,p] = self._signal[i,1,p] + np.random.normal(0,np.sqrt(self._variance[i,1,p]))
                 # auto correlation
-                tmp = est.auto_eb(noise[:2],wsp)  # noise += signal
+                tmp = est.auto_eb(noise[:2],fwhms=self._fwhms[i])  # noise += signal
                 # assign results
                 for k in range(nell):
                     signal_ps_e[k,i,i] = tmp[1][k]
@@ -425,7 +443,7 @@ class abspipe(object):
                         if self._mask[0,p]:
                             noise[2,p] = self._signal[j,0,p] + np.random.normal(0,np.sqrt(self._variance[j,0,p]))
                             noise[3,p] = self._signal[j,1,p] + np.random.normal(0,np.sqrt(self._variance[j,1,p]))
-                    tmp = est.cross_eb(noise,wsp)  # noise += signal
+                    tmp = est.cross_eb(noise,fwhms=[self._fwhms[i],self._fwhms[j]])  # noise += signal
                     for k in range(nell):
                         signal_ps_e[k,i,j] = tmp[1][k]
                         signal_ps_b[k,i,j] = tmp[2][k]

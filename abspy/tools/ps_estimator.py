@@ -8,6 +8,7 @@ For using other PS estimators,
 please modify the implementations below,
 without touching the API.
 """
+import healpy as hp
 import numpy as np
 import logging as log
 from abspy.tools.icy_decorator import icy
@@ -86,7 +87,7 @@ class pstimator(object):
             assert (psbin > 0)
             self._psbin = psbin
         
-    def auto_t(self, maps, wsp=None):
+    def auto_t(self, maps, wsp=None, fwhms=None):
         """
         Auto PS,
         apply NaMaster estimator to T (scalar) map with(out) masks.
@@ -99,6 +100,9 @@ class pstimator(object):
             
         wsp : (PS-estimator-defined) workspace
             A template of mask-induced mode coupling matrix.
+            
+        fwhms : float
+            FWHM of gaussian beams
         
         Returns
         -------
@@ -111,22 +115,25 @@ class pstimator(object):
         # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
         # assemble NaMaster fields
-        _f0 = nmt.NmtField(_apd_mask, [maps[0]])
-        _b = nmt.NmtBin(self._nside, nlb=self._psbin)
+        if fwhms is None:
+            _f0 = nmt.NmtField(_apd_mask, [maps[0]])
+        else:
+            _f0 = nmt.NmtField(_apd_mask, [maps[0]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+        _b = nmt.NmtBin(self._nside, nlb=self._psbin, is_Dell=True)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
             _w.compute_coupling_matrix(_f0, _f0, _b)
             _cl00c = nmt.compute_coupled_cell(_f0, _f0)
             _cl00 = _w.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), np.abs(_cl00[0]), _w)
+            return (_b.get_effective_ells(), _cl00[0], _w)
         else:
             _cl00c = nmt.compute_coupled_cell(_f0, _f0)
             _cl00 = wsp.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), np.abs(_cl00[0]))
+            return (_b.get_effective_ells(), _cl00[0])
         
         
-    def cross_t(self, maps, wsp=None):
+    def cross_t(self, maps, wsp=None, fwhms=[None,None]):
         """
         Cross PS,
         apply NaMaster estimator to T (scalar) map with(out) masks.
@@ -139,6 +146,9 @@ class pstimator(object):
             
         wsp : (PS-estimator-defined) workspace
             A template of mask-induced mode coupling matrix.
+            
+        fwhms : list, tuple
+            FWHM of gaussian beams
         
         Returns
         -------
@@ -148,25 +158,32 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (2,self._npix))
+        assert (len(fwhms) == 2)
         # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
         # assemble NaMaster fields
-        _f01 = nmt.NmtField(_apd_mask, [maps[0]])
-        _f02 = nmt.NmtField(_apd_mask, [maps[1]])
-        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin)
+        if fwhms[0] is None:
+            _f01 = nmt.NmtField(_apd_mask, [maps[0]])
+        else:
+            _f01 = nmt.NmtField(_apd_mask, [maps[0]], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
+        if fwhms[1] is None:
+            _f02 = nmt.NmtField(_apd_mask, [maps[1]])
+        else:
+            _f02 = nmt.NmtField(_apd_mask, [maps[1]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin, is_Dell=True)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
             _w.compute_coupling_matrix(_f01, _f02, _b)
             _cl00c = nmt.compute_coupled_cell(_f01, _f02)
             _cl00 = _w.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), np.abs(_cl00[0]), _w)
+            return (_b.get_effective_ells(), _cl00[0], _w)
         else:
             _cl00c = nmt.compute_coupled_cell(_f01, _f02)
             _cl00 = wsp.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), np.abs(_cl00[0]))
+            return (_b.get_effective_ells(), _cl00[0])
     
-    def auto_eb(self, maps, wsp=None):
+    def auto_eb(self, maps, wsp=None, fwhms=None):
         """
         Auto PS,
         apply NaMaster estimator to QU (spin-2) maps with(out) masks.
@@ -180,6 +197,9 @@ class pstimator(object):
             
         wsp : (PS-estimator-defined) workspace
             A template of mask-induced mode coupling matrix.
+            
+        fwhms : float
+            FWHM of gaussian beams
         
         Returns
         -------
@@ -192,21 +212,24 @@ class pstimator(object):
         # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
         # assemble NaMaster fields
-        _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
-        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin)
+        if fwhms is None:
+            _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
+        else:
+            _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin, is_Dell=True)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
             _w.compute_coupling_matrix(_f2, _f2, _b)
             _cl22c = nmt.compute_coupled_cell(_f2, _f2)
             _cl22 = _w.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), np.abs(_cl22[0]), np.abs(_cl22[3]), _w)
+            return (_b.get_effective_ells(), _cl22[0], _cl22[3], _w)
         else:
             _cl22c = nmt.compute_coupled_cell(_f2, _f2)
             _cl22 = wsp.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), np.abs(_cl22[0]), np.abs(_cl22[3]))
+            return (_b.get_effective_ells(), _cl22[0], _cl22[3])
         
-    def cross_eb(self, maps, wsp=None):
+    def cross_eb(self, maps, wsp=None, fwhms=[None,None]):
         """
         Cross PS,
         apply NaMaster estimator to QU (spin-2) maps with(out) masks.
@@ -220,6 +243,9 @@ class pstimator(object):
             
         wsp : (PS-estimator-defined) workspace
             A template of mask-induced mode coupling matrix.
+            
+        fwhms : list, tuple
+            FWHM of gaussian beams
           
         Returns
         -------
@@ -229,20 +255,27 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (4,self._npix))
+        assert (len(fwhms) == 2)
         # mask apodization
         _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
         # assemble NaMaster fields
-        _f21 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
-        _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]], purify_e=False, purify_b=True)
-        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin)
+        if fwhms[0] is None:
+            _f21 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
+        else:
+            _f21 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
+        if fwhms[1] is None:
+            _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]], purify_e=False, purify_b=True)
+        else:
+            _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin, is_Dell=True)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
             _w.compute_coupling_matrix(_f21, _f22, _b)
             _cl22c = nmt.compute_coupled_cell(_f21, _f22)
             _cl22 = _w.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), np.abs(_cl22[0]), np.abs(_cl22[3]), _w)
+            return (_b.get_effective_ells(), _cl22[0], _cl22[3], _w)
         else:
             _cl22c = nmt.compute_coupled_cell(_f21, _f22)
             _cl22 = wsp.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), np.abs(_cl22[0]), np.abs(_cl22[3]))
+            return (_b.get_effective_ells(), _cl22[0], _cl22[3])

@@ -9,7 +9,7 @@ def main():
     """compact script of tutorial 04"""
     NSIDE = 128
     NSCAL = 1.
-    NSAMP = 500
+    NSAMP = 200
     
     # import data
     map30 = hp.read_map('./data/TQU_30GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
@@ -37,9 +37,9 @@ def main():
     fullvar[2] = vmap150[0]
     fullvar[3] = vmap353[0]
     
-    pipeline1 = ap.abspipe(fullmap,nfreq=4,nmap=1,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvar)
+    pipeline1 = ap.abspipe(fullmap,nfreq=4,nmap=1,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvar,fwhms=[9.e-3,6.e-3,3.e-3,1.e-3])
     pipeline1.nsamp = NSAMP
-    rslt_t = pipeline1(psbin=10,absbin=100,shift=10.,threshold=1.)
+    rslt_t = pipeline1(psbin=20,absbin=100,shift=10.,threshold=1.)
     
     fullmap = np.zeros((4,2,12*NSIDE**2))
     fullmap[0] = map30[1:]
@@ -53,9 +53,9 @@ def main():
     fullvar[2] = vmap150[1:]
     fullvar[3] = vmap353[1:]
     
-    pipeline2 = ap.abspipe(fullmap,nfreq=4,nmap=2,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvar)
+    pipeline2 = ap.abspipe(fullmap,nfreq=4,nmap=2,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvarfwhms=[9.e-3,6.e-3,3.e-3,1.e-3])
     pipeline2.nsamp = NSAMP
-    rslt_eb = pipeline2(psbin=10,absbin=100,shift=0.,threshold=1.)
+    rslt_eb = pipeline2(psbin=20,absbin=100,shift=0.,threshold=1.)
     
     fig,ax = matplotlib.pyplot.subplots(figsize=(10,10))
     
