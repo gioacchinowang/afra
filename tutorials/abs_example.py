@@ -1,11 +1,10 @@
 import abspy as ap
 import healpy as hp
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 
-def main():
+def main(cut):
     """compact script of tutorial 04"""
     NSIDE = 128
     NSCAL = 1.
@@ -37,9 +36,9 @@ def main():
     fullvar[2] = vmap150[0]
     fullvar[3] = vmap353[0]
     
-    pipeline1 = ap.abspipe(fullmap,nfreq=4,nmap=1,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvar,fwhms=[9.e-3,6.e-3,3.e-3,1.e-3])
+    pipeline1 = ap.abspipe(fullmap,nfreq=4,nmap=1,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvar,fwhms=[1.e-3,1.e-3,1.e-3,1.e-3])
     pipeline1.nsamp = NSAMP
-    rslt_t = pipeline1(psbin=20,absbin=100,shift=10.,threshold=1.)
+    rslt_t = pipeline1(psbin=20,absbin=100,shift=10.,threshold=cut)
     
     fullmap = np.zeros((4,2,12*NSIDE**2))
     fullmap[0] = map30[1:]
@@ -53,11 +52,11 @@ def main():
     fullvar[2] = vmap150[1:]
     fullvar[3] = vmap353[1:]
     
-    pipeline2 = ap.abspipe(fullmap,nfreq=4,nmap=2,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvarfwhms=[9.e-3,6.e-3,3.e-3,1.e-3])
+    pipeline2 = ap.abspipe(fullmap,nfreq=4,nmap=2,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvar,fwhms=[1.e-3,1.e-3,1.e-3,1.e-3])
     pipeline2.nsamp = NSAMP
-    rslt_eb = pipeline2(psbin=20,absbin=100,shift=0.,threshold=1.)
+    rslt_eb = pipeline2(psbin=20,absbin=100,shift=0.,threshold=cut)
     
-    fig,ax = matplotlib.pyplot.subplots(figsize=(10,10))
+    fig,ax = plt.subplots(figsize=(10,10))
     
     cmb_cl = hp.anafast(mapcmb)
     ell = np.arange(len(cmb_cl[0]))
@@ -67,6 +66,9 @@ def main():
     ax.errorbar(rslt_t[0],rslt_t[1],yerr=rslt_t[2],color='red',fmt='o',label=r'ABS TT')
     ax.errorbar(rslt_eb[0],rslt_eb[1],yerr=rslt_eb[2],color='green',fmt='s',label=r'ABS EE')
     ax.errorbar(rslt_eb[0],rslt_eb[3],yerr=rslt_eb[4],color='orange',fmt='X',label=r'ABS BB')
+    ax.plot(rslt_t[0],rslt_t[2],color='red',linestyle='-.',label=r'$\sigma_\mathrm{TT}$')
+    ax.plot(rslt_eb[0],rslt_eb[2],color='green',linestyle='-.',label=r'$\sigma_\mathrm{EE}$')
+    ax.plot(rslt_eb[0],rslt_eb[4],color='orange',linestyle='-.',label=r'$\sigma_\mathrm{BB}$')
     ax.fill_between((2*NSIDE,3*NSIDE),(1e-7,1e-7),(1e7,1e7),color='gray',linestyle='--',alpha=0.5)
     ax.set_yscale('log')
     ax.set_xscale('log')
@@ -76,8 +78,10 @@ def main():
     ax.tick_params(axis='both', labelsize=20)
     ax.set_ylim((1.e-7,1.e7))
     ax.set_xlim((1,3*NSIDE))
-    matplotlib.pyplot.savefig('abs_example.pdf', bbox_inches='tight')
+    plt.savefig('abs_example_cut'+str(cut)+'.pdf', bbox_inches='tight')
     
 
 if __name__ == '__main__':
-    main()
+    main(1.0)
+    main(0.5)
+    main(0.2)
