@@ -237,6 +237,10 @@ class abspipe(object):
         return spt_t()
         
     def method_noisyT(self, psbin, absbin, shift, threshold):
+        raw_rslt = self.method_noisyT_raw(psbin,absbin,shift,threshold)
+        return (raw_rslt[0], list(np.mean(raw_rslt[1],axis=0)), list(np.std(raw_rslt[1],axis=0)))
+        
+    def method_noisyT_raw(self, psbin, absbin, shift, threshold):
         """
         CMB T mode (band power) extraction with noise.
         
@@ -321,9 +325,8 @@ class abspipe(object):
             rslt_t = spt_t()
             rslt_ell = rslt_t[0]
             rslt_Dt += rslt_t[1]
-        # get result mean and std
-        Dt_array = np.reshape(rslt_Dt, (self._nsamp,-1))
-        return (rslt_ell, list(np.mean(Dt_array,axis=0)), list(np.std(Dt_array,axis=0)))
+        # get result
+        return (rslt_ell, np.reshape(rslt_Dt, (self._nsamp,-1)))
     
     def method_pureEB(self, psbin, absbin, shift, threshold):
         """
@@ -366,6 +369,10 @@ class abspipe(object):
         return (rslt_e[0], rslt_e[1], rslt_b[1])
         
     def method_noisyEB(self, psbin, absbin, shift, threshold):
+        raw_rslt = self.method_noisyEB_raw(psbin,absbin,shift,threshold)
+        return (raw_rslt[0], list(np.mean(raw_rslt[1],axis=0)), list(np.std(raw_rslt[1],axis=0)), list(np.mean(raw_rslt[2],axis=0)), list(np.std(raw_rslt[2],axis=0)))
+        
+    def method_noisyEB_raw(self, psbin, absbin, shift, threshold):
         """
         CMB E and B modes (band power) extraction with noise.
         
@@ -470,7 +477,5 @@ class abspipe(object):
             rslt_ell = rslt_e[0]
             rslt_De += rslt_e[1]
             rslt_Db += rslt_b[1]
-        # get result mean and std
-        De_array = np.reshape(rslt_De, (self._nsamp,-1))
-        Db_array = np.reshape(rslt_Db, (self._nsamp,-1))
-        return (rslt_ell, list(np.mean(De_array,axis=0)), list(np.std(De_array,axis=0)), list(np.mean(Db_array,axis=0)), list(np.std(Db_array,axis=0)))
+        # get result
+        return (rslt_ell, np.reshape(rslt_De, (self._nsamp,-1)), np.reshape(rslt_Db, (self._nsamp,-1)))

@@ -9,6 +9,10 @@ RUN pip3 install jupyter numpy scipy astropy healpy matplotlib progressbar seabo
 RUN mkdir /home/lab
 WORKDIR /home/lab
 
+#mpi4py
+RUN apt-get install -y --fix-missing libopenmpi-dev openmpi-bin openmpi-doc
+RUN pip3 install mpi4py
+
 #NaMaster
 RUN apt-get install -y --fix-missing automake autoconf gsl-bin libgsl-dev
 
@@ -44,3 +48,6 @@ WORKDIR /home/lab
 
 #clean up
 RUN rm *.tar.gz
+
+# alias
+RUN echo "alias mpirun='mpirun --mca btl ^vader --allow-run-as-root'" >> ~/.bashrc

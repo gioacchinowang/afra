@@ -42,7 +42,8 @@ class abssep(object):
             The bin width of angular modes.
             
         modes : list, tuple
-            The list of angular modes of given power spectra.
+            The list of angular modes of given power spectra,
+            by default (given None) starts with ell=2.
             
         shift : (positive) float
             Global shift to the target power-spectrum,
@@ -135,7 +136,7 @@ class abssep(object):
             assert isinstance(modes, (list,tuple))
             self._modes = modes
         else:  # by default modes start with 0
-            self._modes = [*range(self._lsize)]
+            self._modes = [*range(2, self._lsize+2)]
         log.debug('angular modes list set as '+str(self._modes))
         
     @bins.setter
