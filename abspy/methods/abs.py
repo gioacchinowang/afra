@@ -184,7 +184,7 @@ class abssep(object):
         # prepare CMB f(ell, freq)
         f = np.ones((self._bins,self._fsize), dtype=np.float64)
         if self._noise_flag:
-            # Dl_ij = Dl_ij/sqrt(sigma_li,sigma_lj) + shift*f_li*f_lj
+            # Dl_ij = Dl_ij/sqrt(sigma_li,sigma_lj) + shift*f_li*f_lj/sqrt(sigma_li,sigma_lj)
             for l in range(self._bins):
                 for i in range(self._fsize):
                     f[l,i] /= np.sqrt(RL[l,i])  # rescal f according to noise RMS
@@ -201,10 +201,10 @@ class abssep(object):
         BL = list()
         for ell in range(self._bins):
             # eigvec[:,i] corresponds to eigval[i]
-            # note that eigen values may be complex
             eigval, eigvec = np.linalg.eig(DL[ell])
-            eigval = np.abs(eigval)
-            #assert (all(v > 0 for v in eigval))
+            #print ('D',ell,DL[ell])
+            #print ('f',ell,f[ell])
+            #print ('eigval',ell,eigval)
             for i in range(self._fsize):
                 eigvec[:,i] /= np.linalg.norm(eigvec[:,i])**2
             tmp = 0
