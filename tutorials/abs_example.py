@@ -110,6 +110,16 @@ def main(cut):
         
         np.save('abs_example.npy',output)
         
+        est = ap.pstimator(nside=NSIDE,mask=mask.reshape(1,-1), aposcale=5.0, psbin=20)
+        auto_cmb_t = est.auto_t(mapcmb[0].reshape(1,-1),fwhms=1.e-3)
+        auto_cmb_eb = est.auto_eb(mapcmb[1:].reshape(2,-1),fwhms=1.e-3)
+        output[0] = auto_cmb_t[0]
+        output[1] = auto_cmb_t[1]
+        output[2] = auto_cmb_eb[1]
+        output[3] = auto_cmb_eb[2]
+        
+        np.save('abs_cmb.npy',output[:4])
+        
 
 if __name__ == '__main__':
     main(0.1)
