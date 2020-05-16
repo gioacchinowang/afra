@@ -99,35 +99,17 @@ def main(cut):
     # plot
     if not mpirank:
         
-        fig,ax = plt.subplots(figsize=(10,10))
+        output = np.zeros((7,len(rslt_t[0])))
+        output[0] = rslt_t[0]
+        output[1] = np.mean(rslt_t_dl,axis=0)
+        output[2] = np.std(rslt_t_dl,axis=0)
+        output[3] = np.mean(rslt_e_dl,axis=0)
+        output[4] = np.std(rslt_e_dl,axis=0)
+        output[5] = np.mean(rslt_b_dl,axis=0)
+        output[6] = np.std(rslt_b_dl,axis=0)
         
-        cmb_cl = hp.anafast(mapcmb)
-        ell = np.arange(len(cmb_cl[0]))
-        ax.plot((0.5/np.pi)*ell*(ell+1)*cmb_cl[0],color='black',linestyle='-',label=r'CMB TT')
-        ax.plot((0.5/np.pi)*ell*(ell+1)*cmb_cl[1],color='black',linestyle='-',label=r'CMB EE')
-        ax.plot((0.5/np.pi)*ell*(ell+1)*cmb_cl[2],color='black',linestyle='-',label=r'CMB BB')
-        
-        ax.errorbar(rslt_t[0],np.mean(rslt_t_dl,axis=0),yerr=np.std(rslt_t_dl,axis=0),color='red',fmt='o',label=r'ABS TT')
-        ax.errorbar(rslt_eb[0],np.mean(rslt_e_dl,axis=0),yerr=np.std(rslt_e_dl,axis=0),color='green',fmt='s',label=r'ABS EE')
-        ax.errorbar(rslt_eb[0],np.mean(rslt_b_dl,axis=0),yerr=np.std(rslt_b_dl,axis=0),color='orange',fmt='X',label=r'ABS BB')
-        
-        ax.plot(rslt_t[0],np.std(rslt_t_dl,axis=0),color='red',linestyle='-.',label=r'$\sigma_\mathrm{TT}$')
-        ax.plot(rslt_eb[0],np.std(rslt_e_dl,axis=0),color='green',linestyle='-.',label=r'$\sigma_\mathrm{EE}$')
-        ax.plot(rslt_eb[0],np.std(rslt_b_dl,axis=0),color='orange',linestyle='-.',label=r'$\sigma_\mathrm{BB}$')
-        
-        ax.fill_between((2*NSIDE,3*NSIDE),(1e-7,1e-7),(1e7,1e7),color='gray',linestyle='--',alpha=0.5)
-        ax.set_yscale('log')
-        ax.set_xscale('log')
-        ax.legend(loc=2)
-        ax.set_xlabel(r'$\ell$',fontsize=20)
-        ax.set_ylabel(r'$D_\ell$ ($\mu K^2$)',fontsize=20)
-        ax.tick_params(axis='both', labelsize=20)
-        ax.set_ylim((1.e-7,1.e7))
-        ax.set_xlim((1,3*NSIDE))
-        plt.savefig('abs_example_cut'+str(cut)+'.pdf', bbox_inches='tight')
+        np.save('abs_example.npy',output)
         
 
 if __name__ == '__main__':
-    main(1.0)
-    main(0.5)
-    main(0.2)
+    main(0.1)
