@@ -16,6 +16,9 @@ RUN pip3 install mpi4py
 #NaMaster
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing automake autoconf gsl-bin libgsl-dev
 
+#Dynesty
+RUN pip3 install dynesty
+
 RUN mkdir /home/lab/fftw
 RUN wget http://www.fftw.org/fftw-3.3.8.tar.gz && tar xzf fftw-3.3.8.tar.gz -C fftw --strip-components 1
 WORKDIR fftw

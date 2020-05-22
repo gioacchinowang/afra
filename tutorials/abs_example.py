@@ -8,105 +8,150 @@ comm = MPI.COMM_WORLD
 mpirank = comm.Get_rank()
 mpisize = comm.Get_size()
 
-def main(cut):
-    """compact script of tutorial 04"""
+def main():
+    """MPI supported version of tutorial 04
+    
+    record your input parameters
+    prepare your singal, variance and mask maps
+    """
     NSIDE = 128
-    NSCAL = 1.
     NSAMP = 200  # global sampling size
-    NSAMP = NSAMP//mpisize  # local sampling size
+    NSAMP = max(2,NSAMP//mpisize)  # local sampling size
+    NFREQ = 4  # frequency band
+    FWHMS = [1.e-3]*NFREQ # beam FWHM each frequencies
+    ABSBIN = 100  # angular mode bin number
+    SHIFT_T = 10.  # CMB bandpower shift
+    SHIFT_EB = 10.
+    CUT_T = 1.  # CMB bandpower extraction threshold
+    CUT_EB = 0.1
     
+    # import data
     if not mpirank:
-        # import data
-        map30 = hp.read_map('./data/TQU_30GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
-        map95 = hp.read_map('./data/TQU_95GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
-        map150 = hp.read_map('./data/TQU_150GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
-        map353 = hp.read_map('./data/TQU_353GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
-        mapcmb = hp.read_map('./data/TQU_CMB_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
-        vmap30 = hp.read_map('./data/TQU_var_30GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)*NSCAL
-        vmap95 = hp.read_map('./data/TQU_var_95GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)*NSCAL
-        vmap150 = hp.read_map('./data/TQU_var_150GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)*NSCAL
-        vmap353 = hp.read_map('./data/TQU_var_353GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)*NSCAL
-        mask = hp.read_map('./data/ali_mask_r7.fits',dtype=bool,verbose=False)
+        signalmaps = np.zeros((NFREQ,3,12*NSIDE**2))
+        signalmaps[0] = hp.read_map('./data/TQU_30GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+        signalmaps[1] = hp.read_map('./data/TQU_95GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+        signalmaps[2] = hp.read_map('./data/TQU_150GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+        signalmaps[3] = hp.read_map('./data/TQU_353GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+        
+        varmaps = np.zeros((NFREQ,3,12*NSIDE**2))
+        varmaps[0] = hp.read_map('./data/TQU_var_30GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+        varmaps[1] = hp.read_map('./data/TQU_var_95GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+        varmaps[2] = hp.read_map('./data/TQU_var_150GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+        varmaps[3] = hp.read_map('./data/TQU_var_353GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+        
+        maskmap = hp.read_map('./data/ali_mask_r7.fits',dtype=bool,verbose=False)
+        
+        cmbmap = hp.read_map('./data/TQU_CMB_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
     else:
-        map30 = None
-        map95 = None
-        map150 = None
-        map353 = None
-        mapcmb = None
-        vmap30 = None
-        vmap95 = None
-        vmap150 = None
-        vmap353 = None
-        mask = None
-    # bcast
-    map30 = comm.bcast(map30, root=0)
-    map95 = comm.bcast(map95, root=0)
-    map150 = comm.bcast(map150, root=0)
-    map353 = comm.bcast(map353, root=0)
-    mapcmb = comm.bcast(mapcmb, root=0)
-    vmap30 = comm.bcast(vmap30, root=0)
-    vmap95 = comm.bcast(vmap95, root=0)
-    vmap150 = comm.bcast(vmap150, root=0)
-    vmap353 = comm.bcast(vmap353, root=0)
-    mask = comm.bcast(mask, root=0)
+        signalmaps = None
+        varmaps = None
+        cmbmap = None
+        maskmap = None
+    # bcast data
+    signalmaps = comm.bcast(signalmaps, root=0)
+    varmaps = comm.bcast(varmaps, root=0)
+    cmbmap = comm.bcast(cmbmap, root=0)
+    maskmap = comm.bcast(maskmap, root=0)
     
-    fullmap = np.zeros((4,1,12*NSIDE**2))
-    fullmap[0] = map30[0]
-    fullmap[1] = map95[0]
-    fullmap[2] = map150[0]
-    fullmap[3] = map353[0]
+    """---------- don't worry about the following ----------"""
     
-    fullvar = np.zeros((4,1,12*NSIDE**2))
-    fullvar[0] = vmap30[0]
-    fullvar[1] = vmap95[0]
-    fullvar[2] = vmap150[0]
-    fullvar[3] = vmap353[0]
+    fullmap = signalmaps[:,0,:].reshape(NFREQ,1,12*NSIDE**2)
+    fullvar = varmaps[:,0,:].reshape(NFREQ,1,12*NSIDE**2)
     
-    pipeline1 = ap.abspipe(fullmap,nfreq=4,nmap=1,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvar,fwhms=[1.e-3,1.e-3,1.e-3,1.e-3])
+    pipeline1 = ap.abspipe(fullmap,nfreq=NFREQ,nmap=1,nside=NSIDE,mask=maskmap.reshape(1,-1),variance=fullvar,fwhms=FWHMS)
     pipeline1.nsamp = NSAMP
-    rslt_t = pipeline1.method_noisyT_raw(psbin=20,absbin=100,shift=10.,threshold=cut)
-    #rslt_t = pipeline1(psbin=20,absbin=100,shift=10.,threshold=cut)
+    raw_t = pipeline1.method_noisyT_raw(psbin=20)
     
-    fullmap = np.zeros((4,2,12*NSIDE**2))
-    fullmap[0] = map30[1:]
-    fullmap[1] = map95[1:]
-    fullmap[2] = map150[1:]
-    fullmap[3] = map353[1:]
+    fullmap = signalmaps[:,1:,:].reshape(NFREQ,2,12*NSIDE**2)
+    fullvar = varmaps[:,1:,:].reshape(NFREQ,2,12*NSIDE**2)
     
-    fullvar = np.zeros((4,2,12*NSIDE**2))
-    fullvar[0] = vmap30[1:]
-    fullvar[1] = vmap95[1:]
-    fullvar[2] = vmap150[1:]
-    fullvar[3] = vmap353[1:]
-    
-    pipeline2 = ap.abspipe(fullmap,nfreq=4,nmap=2,nside=NSIDE,mask=mask.reshape(1,-1),variance=fullvar,fwhms=[1.e-3,1.e-3,1.e-3,1.e-3])
+    pipeline2 = ap.abspipe(fullmap,nfreq=NFREQ,nmap=2,nside=NSIDE,mask=maskmap.reshape(1,-1),variance=fullvar,fwhms=FWHMS)
     pipeline2.nsamp = NSAMP
-    rslt_eb = pipeline2.method_noisyEB_raw(psbin=20,absbin=100,shift=0.,threshold=cut)
-    #rslt_eb = pipeline2(psbin=20,absbin=100,shift=0.,threshold=cut)
+    raw_eb = pipeline2.method_noisyEB_raw(psbin=20)
     
     # collect data
-    rslt_t_dl = None
-    rslt_e_dl = None
-    rslt_b_dl = None
+    ellist = raw_t[0]  # angular mode position
+    raw_t_noise = None
+    raw_t_signal = None
+    raw_e_noise = None
+    raw_e_signal = None
+    raw_b_noise = None
+    raw_b_signal = None
     if not mpirank:
-        rslt_t_dl = np.empty([mpisize*NSAMP, len(rslt_t[0])], dtype=rslt_t[1].dtype)
-        rslt_e_dl = np.empty([mpisize*NSAMP, len(rslt_eb[0])], dtype=rslt_eb[1].dtype)
-        rslt_b_dl = np.empty([mpisize*NSAMP, len(rslt_eb[0])], dtype=rslt_eb[2].dtype)
-    comm.Gather(rslt_t[1], rslt_t_dl, root=0)
-    comm.Gather(rslt_eb[1], rslt_e_dl, root=0)
-    comm.Gather(rslt_eb[2], rslt_b_dl, root=0)
+        raw_t_noise = np.empty([mpisize*NSAMP, NFREQ, len(ellist), len(ellist)], dtype=raw_t[1].dtype)
+        raw_t_signal = np.empty([mpisize*NSAMP, NFREQ, len(ellist), len(ellist)], dtype=raw_t[1].dtype)
+        raw_e_noise = np.empty([mpisize*NSAMP, NFREQ, len(ellist), len(ellist)], dtype=raw_eb[1].dtype)
+        raw_e_signal = np.empty([mpisize*NSAMP, NFREQ, len(ellist), len(ellist)], dtype=raw_eb[1].dtype)
+        raw_b_noise = np.empty([mpisize*NSAMP, NFREQ, len(ellist), len(ellist)], dtype=raw_eb[1].dtype)
+        raw_b_signal = np.empty([mpisize*NSAMP, NFREQ, len(ellist), len(ellist)], dtype=raw_eb[1].dtype)
+    comm.Gather(raw_t[1], raw_t_noise, root=0)
+    comm.Gather(raw_t[2], raw_t_signal, root=0)
+    comm.Gather(raw_eb[1], raw_e_noise, root=0)
+    comm.Gather(raw_eb[2], raw_b_noise, root=0)
+    comm.Gather(raw_eb[3], raw_e_signal, root=0)
+    comm.Gather(raw_eb[4], raw_b_signal, root=0)
     
-    # plot
+    # analyze raw output
     if not mpirank:
         
-        output = np.zeros((7,len(rslt_t[0])))
-        output[0] = rslt_t[0]
-        output[1] = np.mean(rslt_t_dl,axis=0)
-        output[2] = np.std(rslt_t_dl,axis=0)
-        output[3] = np.mean(rslt_e_dl,axis=0)
-        output[4] = np.std(rslt_e_dl,axis=0)
-        output[5] = np.mean(rslt_b_dl,axis=0)
-        output[6] = np.std(rslt_b_dl,axis=0)
+        # analyze TT
+        # get noise PS mean and rms
+        t_noise_mean = np.mean(raw_t_noise,axis=0)
+        t_noise_std = np.std(raw_t_signal,axis=0)
+        t_noise_std_diag = np.zeros((len(ellist),NFREQ))
+        for l in range(len(ellist)):
+            t_noise_std_diag[l] = np.diag(t_noise_std[l])
+        # add signal map
+        rslt_ell = list()
+        rslt_Dt = list()
+        for s in range(mpisize*NSAMP):
+            # send PS to ABS method
+            safe_absbin = min(len(ellist), ABSBIN)
+            spt_t = abssep(raw_t_signal[s],t_noise_mean,t_noise_std_diag,modes=ellist,bins=safe_absbin,shift=SHIFT_T,threshold=CUT_T)
+            rslt_t = spt_t()
+            if (s==0):
+                rslt_ell = rslt_t[0]
+            rslt_Dt += rslt_t[1]
+        rslt_Dt_array = np.reshape(rslt_Dt, (mpisize*NSAMP,-1))
+        
+        # analyze EE and BB
+        # get noise PS mean and rms
+        e_noise_mean = np.mean(raw_e_noise,axis=0)
+        e_noise_std = np.std(raw_e_noise,axis=0)
+        b_noise_mean = np.mean(raw_b_noise,axis=0)
+        b_noise_std = np.std(raw_b_noise,axis=0)
+        e_noise_std_diag = np.zeros((len(ellist),NFREQ))
+        b_noise_std_diag = np.zeros((len(ellist),NFREQ))
+        for l in range(len(ellist)):
+            e_noise_std_diag[l] = np.diag(e_noise_std[l])
+            b_noise_std_diag[l] = np.diag(b_noise_std[l])
+        # add signal map
+        rslt_ell = list()
+        rslt_De = list()
+        rslt_Db = list()
+        for s in range(mpisize*NSAMP):
+            # send PS to ABS method
+            safe_absbin = min(len(ellist), ABSBIN)
+            spt_e = abssep(raw_e_signal[s],e_noise_mean,e_noise_std_diag,modes=ellist,bins=safe_absbin,shift=SHIFT_EB,threshold=CUT_EB)
+            spt_b = abssep(raw_b_signal[s],b_noise_mean,b_noise_std_diag,modes=ellist,bins=safe_absbin,shift=SHIFT_EB,threshold=CUT_EB)
+            rslt_e = spt_e()
+            rslt_b = spt_b()
+            if (s==0):
+                rslt_ell = rslt_e[0]
+            rslt_De += rslt_e[1]
+            rslt_Db += rslt_b[1]
+        # get result
+        rslt_De_array = np.reshape(rslt_De, (mpisize*NSAMP,-1))
+        rslt_Db_array = np.reshape(rslt_Db, (mpisize*NSAMP,-1))
+        
+        output = np.zeros((7,len(ellist)))
+        output[0] = ellist
+        output[1] = np.mean(rslt_Dt_array,axis=0)
+        output[2] = np.std(rslt_Dt_array,axis=0)
+        output[3] = np.mean(rslt_De_array,axis=0)
+        output[4] = np.std(rslt_De_array,axis=0)
+        output[5] = np.mean(rslt_Db_array,axis=0)
+        output[6] = np.std(rslt_Db_array,axis=0)
         
         np.save('abs_example.npy',output)
         
@@ -122,4 +167,4 @@ def main(cut):
         
 
 if __name__ == '__main__':
-    main(0.1)
+    main()

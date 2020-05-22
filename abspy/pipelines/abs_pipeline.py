@@ -130,7 +130,7 @@ class abspipe(object):
         assert isinstance(signal, np.ndarray)
         assert (signal.shape == (self._nfreq,self._nmap,self._npix))
         self._signal = signal
-        log.debug('singal maps loaded')
+        log.debug('signal maps loaded')
         
     @variance.setter
     def variance(self, variance):
@@ -217,7 +217,7 @@ class abspipe(object):
         ellist = list(trial[0])  # register angular modes
         #wsp = trial[-1]  # register workspace
         nell = len(ellist)  # know the number of angular modes
-        # prepare total singal PS in the shape required by ABS method
+        # prepare total signal PS in the shape required by ABS method
         signal_ps_t = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
             # auto correlation
@@ -236,11 +236,7 @@ class abspipe(object):
         spt_t = abssep(signal_ps_t,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
         return spt_t()
         
-    def method_noisyT(self, psbin, absbin, shift, threshold):
-        raw_rslt = self.method_noisyT_raw(psbin,absbin,shift,threshold)
-        return (raw_rslt[0], list(np.mean(raw_rslt[1],axis=0)), list(np.std(raw_rslt[1],axis=0)))
-        
-    def method_noisyT_raw(self, psbin, absbin, shift, threshold):
+    def method_noisyT_raw(self, psbin):
         """
         CMB T mode (band power) extraction with noise.
         
@@ -263,9 +259,8 @@ class abspipe(object):
                 wsp_dict[(i,j)] = tmp[-1]  # register workspace
         nell = len(ellist)  # know the number of angular modes
         # allocate
-        noise_ps_t = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
+        noise_ps_t = np.zeros((self._nsamp,nell,self._nfreq,self._nfreq),dtype=np.float64)
         signal_ps_t = np.zeros((self._nsamp,nell,self._nfreq,self._nfreq),dtype=np.float64)
-        noise_rms_t = np.zeros((nell,self._nfreq),dtype=np.float64)
         noise_map = np.zeros((2,self._npix),dtype=np.float64)
         signal_map = np.zeros((2,self._npix),dtype=np.float64)
         for s in range(self._nsamp):
@@ -280,9 +275,8 @@ class abspipe(object):
                 stmp = est.auto_t(signal_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
                 # assign results
                 for k in range(nell):
-                    noise_ps_t[k,i,i] += ntmp[1][k]
-                    noise_rms_t[k,i] += (tmp[1][k])**2
-                    signal_ps_t[s,k,i,i] += stmp[1][k]
+                    noise_ps_t[s,k,i,i] = ntmp[1][k]
+                    signal_ps_t[s,k,i,i] = stmp[1][k]
                 # cross correlation
                 for j in range(i+1,self._nfreq):
                     # noise realization
@@ -293,27 +287,33 @@ class abspipe(object):
                     ntmp = est.cross_t(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
                     stmp = est.cross_t(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
                     for k in range(nell):
-                        noise_ps_t[k,i,j] += ntmp[1][k]
-                        noise_ps_t[k,j,i] += ntmp[1][k]
+                        noise_ps_t[s,k,i,j] = ntmp[1][k]
+                        noise_ps_t[s,k,j,i] = ntmp[1][k]
                         signal_ps_t[s,k,i,j] = stmp[1][k]
                         signal_ps_t[s,k,j,i] = stmp[1][k]
+        return ellist, noise_ps_t, signal_ps_t
+        
+    def method_noisyT(self, psbin, absbin, shift, threshold):
+        ellist, noise_ps_t, signal_ps_t = self.method_noisyT_raw(psbin)
         # get noise PS mean and rms
-        for l in range(nell):
-            for i in range(self._nfreq):
-                noise_ps_t[l,i,:] /= self._nsamp
-                noise_rms_t[l,i] = np.sqrt(noise_rms_t[l,i]/self._nsamp - noise_ps_t[l,i,i]**2)
+        noise_ps_t_mean = np.mean(noise_ps_t,axis=0)
+        noise_ps_t_std = np.std(noise_ps_t,axis=0)
+        noise_ps_t_std_diag = np.zeros((len(ellist),self._nfreq))
+        for l in range(len(ellist)):
+            noise_ps_t_std_diag[l] = np.diag(noise_ps_t_std[l])
         # add signal map
         rslt_ell = list()
         rslt_Dt = list()
         for s in range(self._nsamp):
             # send PS to ABS method
-            safe_absbin = min(nell, absbin)
-            spt_t = abssep(signal_ps_t[s],noise_ps_t,noise_rms_t,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
+            safe_absbin = min(len(ellist), absbin)
+            spt_t = abssep(signal_ps_t[s],noise_ps_t_mean,noise_ps_t_std_diag,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
             rslt_t = spt_t()
-            rslt_ell = rslt_t[0]
+            if (s==0):
+                rslt_ell = rslt_t[0]
             rslt_Dt += rslt_t[1]
-        # get result
-        return (rslt_ell, np.reshape(rslt_Dt, (self._nsamp,-1)))
+        rslt_Dt_array = np.reshape(rslt_Dt, (self._nsamp,-1))
+        return (rslt_ell, list(np.mean(rslt_Dt_array,axis=0)), list(np.std(rslt_Dt_array,axis=0)))
     
     def method_pureEB(self, psbin, absbin, shift, threshold):
         """
@@ -355,11 +355,7 @@ class abspipe(object):
         rslt_b = spt_b()
         return (rslt_e[0], rslt_e[1], rslt_b[1])
         
-    def method_noisyEB(self, psbin, absbin, shift, threshold):
-        raw_rslt = self.method_noisyEB_raw(psbin,absbin,shift,threshold)
-        return (raw_rslt[0], list(np.mean(raw_rslt[1],axis=0)), list(np.std(raw_rslt[1],axis=0)), list(np.mean(raw_rslt[2],axis=0)), list(np.std(raw_rslt[2],axis=0)))
-        
-    def method_noisyEB_raw(self, psbin, absbin, shift, threshold):
+    def method_noisyEB_raw(self, psbin):
         """
         CMB E and B modes (band power) extraction with noise.
         
@@ -382,12 +378,10 @@ class abspipe(object):
                 wsp_dict[(i,j)] = tmp[-1]  # register workspace
         nell = len(ellist)  # know the number of angular modes
         # allocate
-        noise_ps_e = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
-        noise_ps_b = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
+        noise_ps_e = np.zeros((self._nsamp,nell,self._nfreq,self._nfreq),dtype=np.float64)
+        noise_ps_b = np.zeros((self._nsamp,nell,self._nfreq,self._nfreq),dtype=np.float64)
         signal_ps_e = np.zeros((self._nsamp,nell,self._nfreq,self._nfreq),dtype=np.float64)
         signal_ps_b = np.zeros((self._nsamp,nell,self._nfreq,self._nfreq),dtype=np.float64)
-        noise_rms_e = np.zeros((nell,self._nfreq),dtype=np.float64)
-        noise_rms_b = np.zeros((nell,self._nfreq),dtype=np.float64)
         noise_map = np.zeros((4,self._npix),dtype=np.float64)  # Qi Ui Qj Uj
         signal_map = np.zeros((4,self._npix),dtype=np.float64)  # Qi Ui Qj Uj
         for s in range(self._nsamp):
@@ -405,10 +399,8 @@ class abspipe(object):
                 stmp = est.auto_eb(signal_map[:2],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
                 # assign results
                 for k in range(nell):
-                    noise_ps_e[k,i,i] += ntmp[1][k]
-                    noise_ps_b[k,i,i] += ntmp[2][k]
-                    noise_rms_e[k,i] += (ntmp[1][k])**2
-                    noise_rms_b[k,i] += (ntmp[2][k])**2
+                    noise_ps_e[s,k,i,i] = ntmp[1][k]
+                    noise_ps_b[s,k,i,i] = ntmp[2][k]
                     signal_ps_e[s,k,i,i] = stmp[1][k]
                     signal_ps_b[s,k,i,i] = stmp[2][k]
                 # cross correlation
@@ -424,34 +416,44 @@ class abspipe(object):
                     ntmp = est.cross_eb(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
                     stmp = est.cross_eb(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
                     for k in range(nell):
-                        noise_ps_e[k,i,j] += ntmp[1][k]
-                        noise_ps_b[k,i,j] += ntmp[2][k]
-                        noise_ps_e[k,j,i] += ntmp[1][k]
-                        noise_ps_b[k,j,i] += ntmp[2][k]
+                        noise_ps_e[s,k,i,j] = ntmp[1][k]
+                        noise_ps_b[s,k,i,j] = ntmp[2][k]
+                        noise_ps_e[s,k,j,i] = ntmp[1][k]
+                        noise_ps_b[s,k,j,i] = ntmp[2][k]
                         signal_ps_e[s,k,i,j] = stmp[1][k]
                         signal_ps_e[s,k,j,i] = stmp[1][k]
                         signal_ps_b[s,k,i,j] = stmp[2][k]
                         signal_ps_b[s,k,j,i] = stmp[2][k]
+        return (ellist, noise_ps_e, noise_ps_b, signal_ps_e, signal_ps_b)
+        
+    def method_noisyEB(self, psbin, absbin, shift, threshold):
+        ellist, noise_ps_e, noise_ps_b, signal_ps_e, signal_ps_b = self.method_noisyEB_raw(psbin)
         # get noise PS mean and rms
-        for l in range(nell):
-            for i in range(self._nfreq):
-                noise_ps_e[l,i,:] /= self._nsamp
-                noise_ps_b[l,i,:] /= self._nsamp
-                noise_rms_e[l,i] = np.sqrt(noise_rms_e[l,i]/self._nsamp - noise_ps_e[l,i,i]**2)
-                noise_rms_b[l,i] = np.sqrt(noise_rms_b[l,i]/self._nsamp - noise_ps_b[l,i,i]**2)
+        noise_ps_e_mean = np.mean(noise_ps_e,axis=0)
+        noise_ps_e_std = np.std(noise_ps_e,axis=0)
+        noise_ps_b_mean = np.mean(noise_ps_b,axis=0)
+        noise_ps_b_std = np.std(noise_ps_b,axis=0)
+        noise_ps_e_std_diag = np.zeros((len(ellist),self._nfreq))
+        noise_ps_b_std_diag = np.zeros((len(ellist),self._nfreq))
+        for l in range(len(ellist)):
+            noise_ps_e_std_diag[l] = np.diag(noise_ps_e_std[l])
+            noise_ps_b_std_diag[l] = np.diag(noise_ps_b_std[l])
         # add signal map
         rslt_ell = list()
         rslt_De = list()
         rslt_Db = list()
         for s in range(self._nsamp):
             # send PS to ABS method
-            safe_absbin = min(nell, absbin)
-            spt_e = abssep(signal_ps_e[s],noise_ps_e,noise_rms_e,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
-            spt_b = abssep(signal_ps_b[s],noise_ps_b,noise_rms_b,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
+            safe_absbin = min(len(ellist), absbin)
+            spt_e = abssep(signal_ps_e[s],noise_ps_e_mean,noise_ps_e_std_diag,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
+            spt_b = abssep(signal_ps_b[s],noise_ps_b_mean,noise_ps_b_std_diag,modes=ellist,bins=safe_absbin,shift=shift,threshold=threshold)
             rslt_e = spt_e()
             rslt_b = spt_b()
-            rslt_ell = rslt_e[0]
+            if (s==0):
+                rslt_ell = rslt_e[0]
             rslt_De += rslt_e[1]
             rslt_Db += rslt_b[1]
         # get result
-        return (rslt_ell, np.reshape(rslt_De, (self._nsamp,-1)), np.reshape(rslt_Db, (self._nsamp,-1)))
+        rslt_De_array = np.reshape(rslt_De, (self._nsamp,-1))
+        rslt_Db_array = np.reshape(rslt_Db, (self._nsamp,-1))
+        return (rslt_ell, list(np.mean(rslt_De_array,axis=0)), list(np.std(rslt_De_array,axis=0)), list(np.mean(rslt_Db_array,axis=0)), list(np.std(rslt_Db_array,axis=0)))
