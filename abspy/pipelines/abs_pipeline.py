@@ -278,10 +278,8 @@ class abspipe(object):
                 noise_map[0] = mtmp
                 signal_map[0] = self._signals[i,0] + mtmp
                 # auto correlation
-                #ntmp = est.auto_t(noise_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
-                #stmp = est.auto_t(signal_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
-                ntmp = est.auto_t(noise_map[0].reshape(1,-1),fwhms=self._fwhms[i])
-                stmp = est.auto_t(signal_map[0].reshape(1,-1),fwhms=self._fwhms[i])
+                ntmp = est.auto_t(noise_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
+                stmp = est.auto_t(signal_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
                 # assign results
                 for k in range(len(modes)):
                     noise_ps_t[s,k,i,i] = ntmp[1][k]
@@ -293,10 +291,8 @@ class abspipe(object):
                     noise_map[1] = mtmp
                     signal_map[1] = self._signals[j,0] + mtmp
                     # cross correlation
-                    #ntmp = est.cross_t(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
-                    #stmp = est.cross_t(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
-                    ntmp = est.cross_t(noise_map,fwhms=[self._fwhms[i],self._fwhms[j]])
-                    stmp = est.cross_t(signal_map,fwhms=[self._fwhms[i],self._fwhms[j]])
+                    ntmp = est.cross_t(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    stmp = est.cross_t(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
                     for k in range(len(modes)):
                         noise_ps_t[s,k,i,j] = ntmp[1][k]
                         noise_ps_t[s,k,j,i] = ntmp[1][k]
