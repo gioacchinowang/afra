@@ -1,16 +1,18 @@
 import logging as log
 import numpy as np
 import dynesty
-from abspy.tools.fg_model import syncmodel, dustmodel, syncdustmodel
+from abspy.tools.fg_models import syncdustmodel
+from abspy.tools.bg_models import cmbmodel
 from abspy.tools.ps_estimator import pstimator
 from abspy.tools.icy_decorator import icy
+
 
 @icy
 class tpfpipe(object):
     """
     The template fitting pipeline class.
     
-    without template:
+    without template (template=None):
         D_b,l at effective ells
         D_s,l at effective ells
         D_d,l at effective ells
@@ -22,17 +24,16 @@ class tpfpipe(object):
         foreground frequency scaling parameters
         foregorund cross-corr parameters
     """
-    
-    def __init__(self, singal, freq, nmap, nside, nbin=10, variance=None, mask=None, fwhms=None, sampling_opt=dict()):
+    def __init__(self, singals, freqs, nmap, nside, variances, mask=None, fwhms=None, templates=None, refs=[30.,353.], sampling_opt=dict()):
         """
         Parameters
         ----------
         
-        signal : numpy.ndarray
+        signals : numpy.ndarray
             Measured signal maps,
             should be arranged in shape: (frequency #, map #, pixel #).
             
-        variance : numpy.ndarray
+        variances : numpy.ndarray
             Measured noise variance maps,
             should be arranged in shape: (frequency #, map #, pixel #).
             By default, no variance maps required.
@@ -41,8 +42,8 @@ class tpfpipe(object):
             Single mask map,
             should be arranged in shape: (1, pixel #).
             
-        freq : list, tuple
-            List of frequencies.
+        freqs : list, tuple
+            List of frequencies of measurements
             
         nmap : int
             Number of maps,
@@ -55,89 +56,114 @@ class tpfpipe(object):
         fwhms : list, tuple
             FWHM of gaussian beams for each frequency
             
+        templates : numpy.ndarray
+            Template map,
+            should be arranged in shape: (ref frequency #, map #, pixel #)
+            
+        refs : list, tuple
+            reference frequency of template maps,
+            two element list, first for synchrotron, second for dust
+            
         sampling_opt : dict
             Dynesty smapling options
         """
-        log.debug('@ tpfpipeline::__init__')
-        self.freq = freq
+        log.debug('@ tpfpipe::__init__')
+        # basic settings
+        self.freqs = freqs
         self.nmap = nmap
         self.nside = nside
         self.fwhms = fwhms
-        self.nbin = nbin
-        #
-        self.signal = signal
-        self.variance = variance
+        # measurements
+        self.signals = signals
+        self.variances = variances
         self.mask = mask
-        # method select dict with keys defined by (self._noise_flag, self._nmap)
-        self._methodict = {(1): self.method_T,
-                           (2): self.method_EB}
+        # reference frequencies
+        self.refs = refs
+        # adding template maps (for estimating template PS band power)
+        self.templates = templates
         # sampling optinos
         self.sampling_opt = sampling_opt
-                           
-    @property
-    def signal(self):
-        return self._signal
+        # init active parameter list
+        self.active_param_list = list()
+        # PS estimation setting
+        self._psbin = 20
+        self._nsamp = 500
         
     @property
-    def variance(self):
-        return self._variance
+    def freqs(self):
+        return self._freqs
+        
+    @property
+    def nmap(self):
+        return self._nmap
+        
+    @property
+    def nside(self):
+        return self._nside
+        
+    @property
+    def signals(self):
+        return self._signals
+        
+    @property
+    def variances(self):
+        return self._variances
         
     @property
     def mask(self):
         return self._mask
         
     @property
-    def freq(self):
-        return self._freq
-        
-    @property
-    def nside(self):
-        return self._nside
-    
-    @property
-    def nmap(self):
-        return self._nmap
-        
-    @property
     def fwhms(self):
         return self._fwhms
         
     @property
-    def nbin(self):
-        return self._nbin
+    def refs(self):
+        return self._refs
+        
+    @property
+    def templates(self):
+        return self._templates
         
     @property
     def sampling_opt(self):
         return self._sampling_opt
         
     @property
-    def prior(self, cube):
-        """flat prior"""
-        return cube
+    def active_param_list(self):
+        """active parameter name list"""
+        return self._active_param_list
         
     @property
     def nparam(self):
+        """number of active parameters"""
+        return len(self._active_param_list)
         
-        return self._nbin
+    @refs.setter
+    def refs(self, refs):
+        assert (len(refs) == 2)  # need two refernece frequencies
+        assert (refs[0] < refs[1])  # 1st for sync, 2nd for dust
+        self._refs = refs
+        log.debug('reference frequencies %s' % str(self._refs))
         
     @sampling_opt.setter
     def sampling_opt(self, opt):
         assert isinstance(opt, dict)
         self._sampling_opt = opt
         
-    @nfreq.setter
-    def freq(self, freq):
-        assert isinstance(freq, (list,tuple))
-        self._freq = freq
-        self._nfreq = len(freq)
-        log.debug('number of frequencies'+str(self._nfreq))
+    @freqs.setter
+    def freqs(self, freqs):
+        assert isinstance(freqs, (list,tuple))
+        self._freqs = freqs
+        self._nfreq = len(freqs)
+        log.debug('number of frequencies %s' % str(self._nfreq))
         
     @nmap.setter
     def nmap(self, nmap):
         assert isinstance(nmap, int)
         assert (nmap > 0)
         self._nmap = nmap
-        log.debug('number of maps'+str(self._nmap))
+        log.debug('number of maps %s' % str(self._nmap))
         
     @nside.setter
     def nside(self, nside):
@@ -145,26 +171,46 @@ class tpfpipe(object):
         assert (nside > 0)
         self._nside = nside
         self._npix = 12*nside**2
-        log.debug('HEALPix Nside'+str(self._nside))
+        log.debug('HEALPix Nside %s' % str(self._nside))
         
-    @signal.setter
-    def signal(self, signal):
-        assert isinstance(signal, np.ndarray)
-        assert (signal.shape == (self._nfreq,self._nmap,self._npix))
-        self._signal = signal
-        log.debug('singal maps loaded')
+    @fwhms.setter
+    def fwhms(self, fwhms):
+        """FWHM for each frequency"""
+        assert isinstance(fwhms, (list,tuple))
+        assert (len(fwhms) == self._nfreq)
+        self._fwhms = fwhms
         
-    @variance.setter
-    def variance(self, variance):
-        if variance is not None:
-            assert isinstance(variance, np.ndarray)
-            assert (variance.shape == (self._nfreq,self._nmap,self._npix))
-            self._noise_flag = True
-        else:
-            self._noise_flag = False
-        self._variance = variance
+    @active_param_list.setter
+    def active_param_list(self, active_param_list):
+        assert isinstance(active_param_list, (list,tuple))
+        self._active_param_list = active_param_list
+        
+    @signals.setter
+    def signals(self, signals):
+        assert isinstance(signals, np.ndarray)
+        assert (signals.shape == (self._nfreq,self._nmap,self._npix))
+        self._signals = signals
+        log.debug('signal maps loaded')
+        
+    @variances.setter
+    def variances(self, variances):
+        assert isinstance(variances, np.ndarray)
+        assert (variances.shape == (self._nfreq,self._nmap,self._npix))
+        self._variances = variances
         log.debug('variance maps loaded')
         
+    @templates.setter
+    def templates(self, templates):
+        """template maps at two frequency bands"""
+        if templates is not None:
+            assert isinstance(templates, np.ndarray)
+            assert (templates.shape == (2,self._nmap,self._npix))
+            self._template_flag = True
+        else:
+            self._template_flag = False
+        self._templates = templates
+        log.debug('template maps loaded')
+    
     @mask.setter
     def mask(self, mask):
         if mask is None:
@@ -175,7 +221,7 @@ class tpfpipe(object):
             self._mask = mask
         log.debug('mask map loaded')
         
-     def __call__(self, kwargs=dict()):
+    def __call__(self, kwargs=dict()):
         """
         Parameters
         ----------
@@ -188,6 +234,30 @@ class tpfpipe(object):
         Dynesty sampling results
         """
         log.debug('@ tpfit_pipeline::__call__')
+        return self.run(kwargs)
+        
+    def run(self, kwargs=dict()):
+        # conduct PS estimation
+        bprslt = self.bpestimator()
+        # models
+        foreground = syncdustmodel(bprslt[0])
+        background = cmbmodel(bprslt[0])
+        #@property
+        #def param_list(self):
+        #"""combined parameter list of foreground and background mdoels"""
+        #return self._fgmodel.param_list + self._bgmodel.param_list
+        
+        '''
+        assert isinstance(fgmodel, fgmodel)
+        self._fgmodel = fgmodel
+        log.debug('foreground model set')
+        
+        assert isinstance(bgmodel, bgmodel)
+        self._bgmodel = bgmodel
+        log.debug('background model set')
+        '''
+        
+        '''
         # init dynesty
         sampler = dynesty.NestedSampler(self._core_likelihood,
                                         self.prior,
@@ -195,11 +265,156 @@ class tpfpipe(object):
                                         **self.sampling_opt)
         sampler.run_nested(**kwargs)
         return sampler.results
+        '''
+        return bprslt
         
-    @nbin.setter
-    def nbin(self, nbin):
-        assert isinstance(nbin, int)
-        return self._nbin = nbin
+    def info(self):
+        print ('sampling check list')
+        print ('measurement frequency band')
+        print (self._freqs)
+        print ('# of frequency bands')
+        print (self._nfreq)
+        print ('# of maps per frequency')
+        print (self._nmap)
+        print ('map HEALPix Nside')
+        print (self._nside)
+        print ('with template?')
+        print (self._template_flag)
+        print ('template reference frequency bands')
+        print (self._refs)
+        print ('FWHMs')
+        print (self._fwhms)
+        print ('active parameter list')
+        print (self._active_param_list)
+        print ('PS estimation angular modes bin size, self._psbin')
+        print (self._psbin)
+        print ('PS esitmation noise resampling size, self._nsamp')
+        print (self._nsamp)
+        
+    def bpestimator(self):
+        """measurements band power estimator,
+        apodization scale bydefault set as 5.0
+        
+        Returns
+        -------
+        
+        angular mode list
+        
+        band power mean in shape (# modes, # freq, # freq)
+        
+        band power std in shape (# modes, # freq, # freq)
+        """
+        if (self._nmap == 1):
+            # estimate noise PS and noise RMS
+            est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=self._psbin)  # init PS estimator
+            # run trial PS estimations for workspace template
+            wsp_dict = dict()
+            modes = list()
+            for i in range(self._nfreq):
+                tmp = est.auto_t(self._signals[0,0].reshape(1,-1),fwhms=self._fwhms[i])
+                wsp_dict[(i,i)] = tmp[-1]  # register workspace
+                modes = list(tmp[0])  # register angular modes
+                for j in range(i+1,self._nfreq):
+                    tmp = est.cross_t(self._signals[:2,0],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    wsp_dict[(i,j)] = tmp[-1]  # register workspace
+            nell = len(modes)  # know the number of angular modes
+            # allocate
+            ps_t_mean = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
+            ps_t_std = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
+            signal_map = np.zeros((2,self._npix),dtype=np.float64)
+            for s in range(self._nsamp):
+                # prepare noise samples on-fly
+                for i in range(self._nfreq):
+                    # noise realization
+                    signal_map[0] = self._signals[i,0] + self._mask[0]*np.random.normal(size=self._npix)*np.sqrt(self._variances[i,0])
+                    # auto correlation
+                    stmp = est.auto_t(signal_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
+                    # assign results
+                    for k in range(nell):
+                        ps_t_mean[k,i,i] += stmp[1][k]
+                        ps_t_std[k,i,i] += stmp[1][k]**2
+                    # cross correlation
+                    for j in range(i+1,self._nfreq):
+                        # noise realization
+                        signal_map[1] = self._signals[j,0] + self._mask[0]*np.random.normal(size=self._npix)*np.sqrt(self._variances[j,0])
+                        # cross correlation
+                        stmp = est.cross_t(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
+                        for k in range(nell):
+                            ps_t_mean[k,i,j] += stmp[1][k]
+                            ps_t_mean[k,j,i] += stmp[1][k]
+                            ps_t_std[k,i,j] += stmp[1][k]**2
+                            ps_t_std[k,j,i] += stmp[1][k]**2
+            return (modes, ps_t_mean/self._nsamp, np.sqrt(ps_t_std/self._nsamp - (ps_t_mean/self._nsamp)**2))
+        elif (self._nmap == 2):
+            # estimate noise PS and noise RMS
+            est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=self._psbin)  # init PS estimator
+            # run trial PS estimations for workspace template
+            wsp_dict = dict()
+            modes = list()
+            for i in range(self._nfreq):
+                tmp = est.auto_eb(self._signals[0],fwhms=self._fwhms[i])
+                wsp_dict[(i,i)] = tmp[-1]  # register workspace
+                modes = list(tmp[0])  # register angular modes
+                for j in range(i+1,self._nfreq):
+                    tmp = est.cross_eb(self._signals[:2].reshape(4,-1),fwhms=[self._fwhms[i],self._fwhms[j]])
+                    wsp_dict[(i,j)] = tmp[-1]  # register workspace
+            nell = len(modes)  # know the number of angular modes
+            # allocate
+            ps_e_mean = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
+            ps_b_mean = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
+            ps_e_std = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
+            ps_b_std = np.zeros((nell,self._nfreq,self._nfreq),dtype=np.float64)
+            noise_map = np.zeros((4,self._npix),dtype=np.float64)  # Qi Ui Qj Uj
+            signal_map = np.zeros((4,self._npix),dtype=np.float64)  # Qi Ui Qj Uj
+            for s in range(self._nsamp):
+                # prepare noise samples on-fly
+                for i in range(self._nfreq):
+                    # noise realization
+                    signal_map[0] = self._signals[i,0] + self._mask[0]*np.random.normal(size=self._npix)*np.sqrt(self._variances[i,0])
+                    signal_map[1] = self._signals[i,1] + self._mask[0]*np.random.normal(size=self._npix)*np.sqrt(self._variances[i,1])
+                    # auto correlation
+                    stmp = est.auto_eb(signal_map[:2],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
+                    # assign results
+                    for k in range(nell):
+                        ps_e_mean[k,i,i] += stmp[1][k]
+                        ps_e_std[k,i,i] += stmp[1][k]**2
+                        ps_b_mean[k,i,i] += stmp[2][k]
+                        ps_b_std[k,i,i] += stmp[2][k]**2
+                    # cross correlation
+                    for j in range(i+1,self._nfreq):
+                        # noise realization
+                        signal_map[2] = self._signals[j,0] + self._mask[0]*np.random.normal(size=self._npix)*np.sqrt(self._variances[j,0])
+                        signal_map[3] = self._signals[j,1] + self._mask[0]*np.random.normal(size=self._npix)*np.sqrt(self._variances[j,1])
+                        # cross correlation
+                        stmp = est.cross_eb(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
+                        for k in range(nell):
+                            ps_e_mean[k,i,j] += stmp[1][k]
+                            ps_e_mean[k,j,i] += stmp[1][k]
+                            ps_e_std[k,i,j] += stmp[1][k]**2
+                            ps_e_std[k,j,i] += stmp[1][k]**2
+                            ps_b_mean[k,i,j] += stmp[2][k]
+                            ps_b_mean[k,j,i] += stmp[2][k]
+                            ps_b_std[k,i,j] += stmp[2][k]**2
+                            ps_b_std[k,j,i] += stmp[2][k]**2
+            return (modes, ps_e_mean/self._nsamp, np.sqrt(ps_e_std/self._nsamp - (ps_e_mean/self._nsamp)**2), ps_b_mean/self._nsamp, np.sqrt(ps_b_std/self._nsamp - (ps_b_mean/self._nsamp)**2))
+        else:
+            raise ValueError('unsupported number of maps')
+        
+    def activate(self, pname):
+        """set a parameter as active parameter"""
+        log.debug('@ tpfit_pipeline::set_active')
+        assert isinstance(pname, str)
+        if pname in self.active_param_list:
+            print ('%s already activated' % pname)
+        elif pname in self._param_list:
+            self._active_param_list.append(pname)
+            print ('%s activated' % pname)
+        else:
+            raise ValueError('unknown parameter name')
+        
+    def prior(self, cube):
+        """flat prior"""
+        return cube
         
     def _core_likelihood(self, cube):
         """

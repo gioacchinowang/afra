@@ -1,7 +1,7 @@
 import logging as log
 import numpy as np
 from abspy.tools.icy_decorator import icy
-from abspy.tools.binning import binell, binaps, bincps
+
 
 @icy
 class abssep(object):
@@ -12,8 +12,7 @@ class abssep(object):
     - Jian Yao (STJU)
     - Jiaxin Wang (SJTU) jiaxin.wang@sjtu.edu.cn
     """
-    
-    def __init__(self, signal, noise=None, sigma=None, bins=None, modes=None, shift=0.0, threshold=0.0):
+    def __init__(self, signal, noise=None, sigma=None, shift=None, threshold=None):
         """
         ABS separator class initialization function.
         
@@ -38,18 +37,12 @@ class abssep(object):
             * N_freq: number of frequency bands
             * N_modes: number of angular modes
             
-        bins : (positive) integer
-            The bin width of angular modes.
-            
-        modes : list, tuple
-            The list of angular modes of given power spectra,
-            by default (given None) starts with ell=2.
-            
-        shift : (positive) float
+        shift : (positive) numpy.ndarray or None
             Global shift to the target power-spectrum,
             defined in Eq(3) of arXiv:1608.03707.
             
-        threshold : (positive) float
+        threshold : (positive) float or None
+            If None, no threshold is taken.
             The threshold of signal to noise ratio, for information extraction.
         """
         log.debug('@ abs::__init__')
@@ -57,9 +50,6 @@ class abssep(object):
         self.signal = signal
         self.noise = noise
         self.sigma = sigma
-        # DO NOT CHENGE ORDER HERE
-        self.modes = modes
-        self.bins = bins
         #
         self.shift = shift
         self.threshold = threshold
@@ -77,14 +67,6 @@ class abssep(object):
     @property
     def sigma(self):
         return self._sigma
-        
-    @property
-    def modes(self):
-        return self._modes
-        
-    @property
-    def bins(self):
-        return self._bins
     
     @property
     def shift(self):
@@ -130,41 +112,28 @@ class abssep(object):
             log.debug('noise RMS auto-PS read')
         self._sigma = sigma
         
-    @modes.setter
-    def modes(self, modes):
-        if modes is not None:
-            assert isinstance(modes, (list,tuple))
-            self._modes = modes
-        else:  # by default modes start with 0
-            self._modes = [*range(2, self._lsize+2)]
-        log.debug('angular modes list set as '+str(self._modes))
-        
-    @bins.setter
-    def bins(self, bins):
-        assert isinstance(bins, int)
-        assert (bins > 0 and bins <= self._lsize)
-        self._bins = bins
-        log.debug('angular mode bin width set as '+str(self._bins))
-        
     @shift.setter
     def shift(self, shift):
-        assert isinstance(shift, float)
-        assert (shift >= 0)
-        self._shift = shift
-        log.debug('PS power shift set as '+str(self._shift))
+        if shift is not None:
+            assert isinstance(shift, np.ndarray)
+            assert (len(shift) == self._lsize)
+            self._shift = shift
+        else:
+            self._shift = np.zeros(self._lsize)
+        log.debug('PS power shift set: %s' % str(self._shift))
         
     @threshold.setter
     def threshold(self, threshold):
-        assert isinstance(threshold, float)
-        assert (threshold >= 0)
+        if threshold is not None:
+            assert isinstance(threshold, float)
         self._threshold = threshold
-        log.debug('signal to noise threshold set as '+str(self._threshold))
+        log.debug('signal to noise threshold: %s' % str(self._threshold))
         
     @noise_flag.setter
     def noise_flag(self, noise_flag):
         assert isinstance(noise_flag, bool)
         self._noise_flag = noise_flag
-        log.debug('ABS with noise? '+str(self._noise_flag))
+        log.debug('ABS with noise? %s' % str(self._noise_flag))
     
     def __call__(self):
         """
@@ -173,45 +142,63 @@ class abssep(object):
         Returns
         -------
         
-        angular modes, target angular power spectrum : (list, list)
+        BL : numpy.ndarray
+            CMB angular power spectrum band power
         """
         log.debug('@ abs::__call__')
+        return self.run()
+        
+    def run(self):
         # binned average, converted to band power
-        DL = bincps(self._signal,self._modes,self._bins)
-        if (self._noise_flag):
-            NL = bincps(self._noise,self._modes,self._bins)
-            RL = binaps(self._sigma,self._modes,self._bins)
-        # prepare CMB f(ell, freq)
-        f = np.ones((self._bins,self._fsize), dtype=np.float64)
+        DL = self._signal
+        RL = np.ones((self._lsize,self._fsize),dtype=np.float64)
+        RL_tensor = np.ones((self._lsize,self._fsize,self._fsize),dtype=np.float64)
         if self._noise_flag:
-            # Dl_ij = Dl_ij/sqrt(sigma_li,sigma_lj) + shift*f_li*f_lj/sqrt(sigma_li,sigma_lj)
-            for l in range(self._bins):
-                for i in range(self._fsize):
-                    f[l,i] /= np.sqrt(RL[l,i])  # rescal f according to noise RMS
-                for i in range(self._fsize):
-                    for j in range(self._fsize):
-                        DL[l,i,j] = (DL[l,i,j] - NL[l,i,j])/np.sqrt(RL[l,i]*RL[l,j]) + self._shift*f[l,i]*f[l,j]
-        else:
-            # Dl_ij = Dl_ij + shift*f_li*f_lj
-            for l in range(self._bins):
-                for i in range(self._fsize):
-                    for j in range(self._fsize):
-                        DL[l,i,j] += self._shift*f[l,i]*f[l,j]
+            DL -= self._noise  # DL = DL - NL
+            RL = np.sqrt(self._sigma)
+            RL_tensor = np.einsum('ij,ik->ijk',RL,RL)
+        # prepare CMB f(ell, freq)
+        f = np.ones((self._lsize,self._fsize), dtype=np.float64)/RL
+        f_tensor = np.ones((self._lsize,self._fsize,self._fsize), dtype=np.float64)/RL_tensor
+        # Dl_ij = Dl_ij/sqrt(sigma_li,sigma_lj) + shift*f_li*f_lj/sqrt(sigma_li,sigma_lj)
+        DL = DL/RL_tensor + np.einsum('ijk,i->ijk',f_tensor,self._shift)
         # find eign at each angular mode
-        BL = list()
-        for ell in range(self._bins):
+        BL = np.zeros(self._lsize)
+        for ell in range(self._lsize):
             # eigvec[:,i] corresponds to eigval[i]
             eigval, eigvec = np.linalg.eig(DL[ell])
-            #print ('D',ell,DL[ell])
-            #print ('f',ell,f[ell])
-            #print ('eigval',ell,eigval)
             for i in range(self._fsize):
                 eigvec[:,i] /= np.linalg.norm(eigvec[:,i])**2
             tmp = 0
             for i in range(self._fsize):
-                if eigval[i] >= self._threshold:
+                if self._threshold is None:
                     G = np.dot(f[ell], eigvec[:,i])
                     tmp += (G**2/eigval[i])
-            BL.append(1.0/tmp - self._shift)
-        return (binell(self._modes, self._bins), BL)
+                elif eigval[i] > self._threshold:
+                    G = np.dot(f[ell], eigvec[:,i])
+                    tmp += (G**2/eigval[i])
+            BL[ell] = (1.0/tmp - self._shift[ell])
+        return BL
+        
+    def run_info(self):
+        # binned average, converted to band power
+        DL = self._signal
+        RL = np.ones((self._lsize,self._fsize),dtype=np.float64)
+        RL_tensor = np.ones((self._lsize,self._fsize,self._fsize),dtype=np.float64)
+        if self._noise_flag:
+            DL -= self._noise  # DL = DL - NL
+            RL = np.sqrt(self._sigma)
+            RL_tensor = np.einsum('ij,ik->ijk',RL,RL)
+        # prepare CMB f(ell, freq)
+        f = np.ones((self._lsize,self._fsize), dtype=np.float64)/RL
+        f_tensor = np.ones((self._lsize,self._fsize,self._fsize), dtype=np.float64)/RL_tensor
+        # Dl_ij = Dl_ij/sqrt(sigma_li,sigma_lj) + shift*f_li*f_lj/sqrt(sigma_li,sigma_lj)
+        DL = DL/RL_tensor + np.einsum('ijk,i->ijk',f_tensor,self._shift)
+        # find eign at each angular mode
+        info = dict()
+        for ell in range(self._lsize):
+            # eigvec[:,i] corresponds to eigval[i]
+            eigval, eigvec = np.linalg.eig(DL[ell])
+            info[ell] = (eigval, eigvec)
+        return info
         

@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from abspy import binell, bincps, binaps
+from abspy.tools.binning import binell, bincps, binaps
 
 
 class TestBinning(unittest.TestCase):
