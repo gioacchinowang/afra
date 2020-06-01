@@ -3,7 +3,7 @@ import numpy as np
 from abspy.tools.icy_decorator import icy
 from abspy.tools.fg_models import fgmodel, syncdustmodel
 from abspy.tools.bg_models import bgmodel, cmbmodel
-import dynesty
+import pymultinest
 
 
 @icy
@@ -195,12 +195,11 @@ class tpfit(object):
         #
         self.info
         # start Dyensty
-        sampler = dynesty.NestedSampler(self._core_likelihood,
-                                        self.prior,
-                                        len(self.active_param_list),
-                                        **self.sampling_opt)
-        sampler.run_nested(**kwargs)
-        return sampler.results
+        results = pymultinest.solve(LogLikelihood=self._core_likelihood,
+                                    Prior=self.prior,
+                                    n_dims=len(self.active_param_list),
+                                    **self.sampling_opt)
+        return results
         
         
     def _core_likelihood(self, cube):

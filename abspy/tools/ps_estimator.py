@@ -3,11 +3,6 @@ The pseudo-PS estimation module,
 by default it requires the NaMaster package.
 """
 import pymaster as nmt
-"""
-For using other PS estimators,
-please modify the implementations below,
-without touching the API.
-"""
 import healpy as hp
 import numpy as np
 import logging as log
@@ -16,7 +11,7 @@ from abspy.tools.icy_decorator import icy
 @icy
 class pstimator(object):
 
-    def __init__(self, nside, mask=None, aposcale=None, psbin=None):
+    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmax=800):
         """
         Parameters
         ----------
@@ -32,11 +27,15 @@ class pstimator(object):
             
         psbin : (positive) integer
             Number of angular modes for each PS bin.
+            
+        lmax : (positive) integer
+            Maximal angular mode.
         """
         self.nside = nside
         self.mask = mask
         self.aposcale = aposcale
         self.psbin = psbin
+        self.lmax = lmax
         
     @property
     def nside(self):
@@ -53,6 +52,10 @@ class pstimator(object):
     @property
     def psbin(self):
         return self._psbin
+        
+    @property
+    def lmax(self):
+        return self._lmax
         
     @nside.setter
     def nside(self, nside):
@@ -86,6 +89,12 @@ class pstimator(object):
             assert isinstance(psbin, int)
             assert (psbin > 0)
             self._psbin = psbin
+            
+    @lmax.setter
+    def lmax(self, lmax):
+        assert isinstance(lmax, int)
+        assert (lmax > 0)
+        self._lmax = lmax
         
     def auto_t(self, maps, wsp=None, fwhms=None):
         """
@@ -119,7 +128,7 @@ class pstimator(object):
             _f0 = nmt.NmtField(_apd_mask, [maps[0]])
         else:
             _f0 = nmt.NmtField(_apd_mask, [maps[0]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
-        _b = nmt.NmtBin(self._nside, nlb=self._psbin, is_Dell=True)
+        _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
@@ -170,7 +179,7 @@ class pstimator(object):
             _f02 = nmt.NmtField(_apd_mask, [maps[1]])
         else:
             _f02 = nmt.NmtField(_apd_mask, [maps[1]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
-        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin, is_Dell=True)
+        _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
@@ -210,13 +219,13 @@ class pstimator(object):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (2,self._npix))
         # mask apodization
-        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
+        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
         # assemble NaMaster fields
         if fwhms is None:
             _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
         else:
             _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms, 3*self._nside-1))
-        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin, is_Dell=True)
+        _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
@@ -257,7 +266,7 @@ class pstimator(object):
         assert (maps.shape == (4,self._npix))
         assert (len(fwhms) == 2)
         # mask apodization
-        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
+        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
         # assemble NaMaster fields
         if fwhms[0] is None:
             _f21 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
@@ -267,7 +276,7 @@ class pstimator(object):
             _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]], purify_e=False, purify_b=True)
         else:
             _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
-        _b = nmt.NmtBin.from_nside_linear(self._nside, nlb=self._psbin, is_Dell=True)
+        _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()

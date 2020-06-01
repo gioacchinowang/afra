@@ -4,7 +4,7 @@ RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing build-essential
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing git wget unzip vim
 RUN apt-get install -y --fix-missing python3 python3-pip python3-dev
-RUN pip3 install jupyter numpy scipy astropy healpy matplotlib progressbar seaborn pytest nbval
+RUN pip3 install jupyter numpy scipy astropy healpy matplotlib progressbar seaborn pytest nbval corner
 
 RUN mkdir /home/lab
 WORKDIR /home/lab
@@ -16,8 +16,18 @@ RUN pip3 install mpi4py
 #NaMaster
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --fix-missing automake autoconf gsl-bin libgsl-dev
 
-#Dynesty
-RUN pip3 install dynesty corner
+#MultiNest
+RUN apt-get install -y --fix-missing libblas3 libblas-dev liblapack3 liblapack-dev libatlas-base-dev libatlas3-base
+RUN git clone https://github.com/JohannesBuchner/MultiNest.git
+WORKDIR /home/lab/MultiNest/build
+RUN cmake -DCMAKE_INSTALL_PREFIX:PATH=/usr/local .. && make && make install
+WORKDIR /home/lab
+
+# PyMultiNest
+RUN git clone https://github.com/JohannesBuchner/PyMultiNest.git
+WORKDIR /home/lab/PyMultiNest
+RUN python3 setup.py install
+WORKDIR /home/lab
 
 RUN mkdir /home/lab/fftw
 RUN wget http://www.fftw.org/fftw-3.3.8.tar.gz && tar xzf fftw-3.3.8.tar.gz -C fftw --strip-components 1
