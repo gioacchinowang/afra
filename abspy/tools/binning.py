@@ -1,6 +1,7 @@
 import numpy as np
 from copy import deepcopy
 
+
 def binell(modes, bins):
     """
     Angular mode binning.
@@ -32,6 +33,7 @@ def binell(modes, bins):
         result.append(0.5*(modes[begin]+modes[end-1]))
     return result
     
+
 def bincps(cps, modes, bins):
     """
     Binned average of CROSS-power-spectrum (band power).
@@ -72,6 +74,7 @@ def bincps(cps, modes, bins):
         effl = 0.5*(modes[begin]+modes[end-1])
         result[i,:,:] = np.mean(cps_cp[begin:end,:,:], axis=0)*0.5*effl*(effl+1)/np.pi
     return result
+
 
 def binaps(aps, modes, bins):
     """

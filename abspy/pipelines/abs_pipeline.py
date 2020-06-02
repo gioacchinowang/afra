@@ -15,7 +15,7 @@ class abspipe(object):
     - Jian Yao (STJU)
     - Jiaxin Wang (SJTU) jiaxin.wang@sjtu.edu.cn
     """
-    def __init__(self, signals, nfreq, nmap, nside, variances=None, mask=None, fwhms=None):
+    def __init__(self, signals, nfreq, nmap, nside, variances=None, mask=None, lmax=None, fwhms=None):
         """
         The ABS pipeline for extracting CMB power-spectrum band power,
         according to given measured sky maps at various frequency bands.
@@ -50,6 +50,9 @@ class abspipe(object):
         nsamp : integer
             Noise resampling size (hidden parameter, by default is 100).
             
+        lmax : integer
+            Maximal multiple.
+            
         fwhms : list, tuple
             FWHM of gaussian beams for each frequency
         """
@@ -58,6 +61,7 @@ class abspipe(object):
         self.nfreq = nfreq
         self.nmap = nmap
         self.nside = nside
+        self.lmax = lmax
         self.fwhms = fwhms
         #
         self.signals = signals
@@ -100,6 +104,10 @@ class abspipe(object):
         return self._nsamp
         
     @property
+    def lmax(self):
+        return self._lmax
+        
+    @property
     def fwhms(self):
         return self._fwhms
     
@@ -124,6 +132,15 @@ class abspipe(object):
         self._nside = nside
         self._npix = 12*nside**2
         log.debug('HEALPix Nside: %s' % str(self._nside))
+        
+    @lmax.setter
+    def lmax(self, lmax):
+        if lmax is None:
+            self._lmax = 2*self._nside
+        else:
+            assert isinstance(lmax, int)
+            assert (lmax < 3*self._nside)
+            self._lmax = lmax
         
     @signals.setter
     def signals(self, signals):
@@ -175,12 +192,15 @@ class abspipe(object):
             self._fwhms = fwhms
         log.debug('fwhms loaded')
         
-    def __call__(self, psbin, shift=None, threshold=None, verbose=False):
+    def __call__(self, aposcale, psbin, shift=None, threshold=None, verbose=False):
         """
         ABS pipeline class call function.
         
         Parameters
         ----------
+        
+        aposcale : float
+            Apodization scale.
         
         psbin : integer
             Number of angular modes in each bin,
@@ -198,21 +218,26 @@ class abspipe(object):
         angular modes, target angular power spectrum : tuple of lists
         """
         log.debug('@ abspipe::__call__')
+        assert isinstance(aposcale, float)
         assert isinstance(psbin, int)
         assert (psbin > 0)
-        return self.run(psbin, shift, threshold, verbose)
+        assert (aposcale > 0)
+        return self.run(aposcale, psbin, shift, threshold, verbose)
         
-    def run(self, psbin, shift, threshold, verbose=False):
+    def run(self, aposcale, psbin, shift, threshold, verbose=False):
         # method selection
-        return self._methodict[(self._noise_flag,self._nmap)](psbin, shift, threshold, verbose)
+        return self._methodict[(self._noise_flag,self._nmap)](aposcale, psbin, shift, threshold, verbose)
         
-    def run_bmode(self, psbin, shift, threshold, verbose=False):
+    def run_bmode(self, aposcale, psbin, shift, threshold, verbose=False):
+        """alternative routine for B mode only,
+        with EB-leakage corrected before PS estimation,
+        for pipeline test only"""
         if self._noise_flag:
-            return self.method_noisyB(psbin, shift, threshold, verbose)
+            return self.method_noisyB(aposcale, psbin, shift, threshold, verbose)
         else:
-            return self.method_pureB(psbin, shift, threshold, verbose)
-        
-    def method_pureT(self, psbin, shift, threshold, verbose):
+            return self.method_pureB(aposcale, psbin, shift, threshold, verbose)
+    
+    def method_pureT(self, aposcale, psbin, shift, threshold, verbose):
         """
         CMB T mode (band power) extraction without noise.
         
@@ -220,7 +245,7 @@ class abspipe(object):
         -------
         angular modes, T-mode PS
         """
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run a trial PS estimation
         trial = est.auto_t(self._signals[0,0].reshape(1,-1))
         modes = trial[0]
@@ -244,7 +269,7 @@ class abspipe(object):
             return (modes, spt_t.run(), spt_t.run_info())
         return (modes, spt_t.run())
         
-    def method_noisyT_raw(self, psbin):
+    def method_noisyT_raw(self, aposcale, psbin):
         """
         CMB T mode (band power) extraction with noise.
         
@@ -254,7 +279,7 @@ class abspipe(object):
         angular modes, T-mode PS, T-mode PS std
         """
         # estimate noise PS and noise RMS
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run trial PS estimations for workspace template
         wsp_dict = dict()
         modes = None
@@ -300,8 +325,8 @@ class abspipe(object):
                         signal_ps_t[s,k,j,i] = stmp[1][k]
         return modes, noise_ps_t, signal_ps_t
         
-    def method_noisyT(self, psbin, shift, threshold, verbose):
-        modes, noise_ps_t, signal_ps_t = self.method_noisyT_raw(psbin)
+    def method_noisyT(self, aposcale, psbin, shift, threshold, verbose):
+        modes, noise_ps_t, signal_ps_t = self.method_noisyT_raw(aposcale,psbin)
         # get noise PS mean and rms
         noise_ps_t_mean = np.mean(noise_ps_t,axis=0)
         noise_ps_t_std = np.std(noise_ps_t,axis=0)
@@ -320,7 +345,7 @@ class abspipe(object):
             return (modes, np.mean(rslt_Dt,axis=0), np.std(rslt_Dt,axis=0), spt_t.run_info())
         return (modes, np.mean(rslt_Dt,axis=0), np.std(rslt_Dt,axis=0))
     
-    def method_pureEB(self, psbin, shift, threshold, verbose):
+    def method_pureEB(self, aposcale, psbin, shift, threshold, verbose):
         """
         CMB E and B modes (band power) extraction without noise.
         
@@ -329,7 +354,7 @@ class abspipe(object):
         
         angular modes, E-mode PS, B-mode
         """
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run a trial PS estimation
         trial = est.auto_eb(self._signals[0])
         modes = trial[0]  # register angular modes
@@ -358,7 +383,7 @@ class abspipe(object):
             return (modes, spe_e.run(), spt_b.run(), spt_e.run_inf(), spt_b.run_info())
         return (modes, spt_e.run(), spt_b.run())
         
-    def method_noisyEB_raw(self, psbin):
+    def method_noisyEB_raw(self, aposcale, psbin):
         """
         CMB E and B modes (band power) extraction with noise.
         
@@ -368,7 +393,7 @@ class abspipe(object):
         angular modes, E-mode PS, E-mode PS std, B-mode PS, B-mode PS std
         """
         # estimate noise PS and noise RMS
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run trial PS estimations for workspace template
         wsp_dict = dict()
         modes = None
@@ -428,8 +453,8 @@ class abspipe(object):
                         signal_ps_b[s,k,j,i] = stmp[2][k]
         return (modes, noise_ps_e, noise_ps_b, signal_ps_e, signal_ps_b)
         
-    def method_noisyEB(self, psbin, shift, threshold, verbose):
-        modes, noise_ps_e, noise_ps_b, signal_ps_e, signal_ps_b = self.method_noisyEB_raw(psbin)
+    def method_noisyEB(self, aposcale, psbin, shift, threshold, verbose):
+        modes, noise_ps_e, noise_ps_b, signal_ps_e, signal_ps_b = self.method_noisyEB_raw(aposcale,psbin)
         # get noise PS mean and rms
         noise_ps_e_mean = np.mean(noise_ps_e,axis=0)
         noise_ps_e_std = np.std(noise_ps_e,axis=0)
@@ -458,7 +483,7 @@ class abspipe(object):
             return (modes, np.mean(rslt_De,axis=0), np.std(rslt_De,axis=0), np.mean(rslt_Db,axis=0), np.std(rslt_Db,axis=0), spt_e.run_info(), spt_b.run_info())
         return (modes, np.mean(rslt_De,axis=0), np.std(rslt_De,axis=0), np.mean(rslt_Db,axis=0), np.std(rslt_Db,axis=0))
         
-    def method_pureB(self, psbin, shift, threshold, verbose):
+    def method_pureB(self, aposcale, psbin, shift, threshold, verbose):
         """
         CMB B mode (band power) extration without noise
         
@@ -466,7 +491,7 @@ class abspipe(object):
         -------
         angular mdoes, B-mode PS
         """
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # get B mode maps from self._signals
         bmaps = self.purify()
         # run a trial PS estimation
@@ -492,7 +517,7 @@ class abspipe(object):
             return (modes, spt_t.run(), spt_t.run_info())
         return (modes, spt_t.run())
         
-    def method_noisyB_raw(self, psbin):
+    def method_noisyB_raw(self, aposcale, psbin):
         """
         CMB B mode (band power) extraction with noise.
         
@@ -502,7 +527,7 @@ class abspipe(object):
         angular modes, B-mode PS, B-mode PS std
         """
         # estimate noise PS and noise RMS
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=5.0,psbin=psbin)  # init PS estimator
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run trial PS estimations for workspace template
         wsp_dict = dict()
         modes = None
@@ -548,8 +573,8 @@ class abspipe(object):
                         signal_ps_t[s,k,j,i] = stmp[1][k]
         return modes, noise_ps_t, signal_ps_t
         
-    def method_noisyB(self, psbin, shift, threshold, verbose):
-        modes, noise_ps_t, signal_ps_t = self.method_noisyB_raw(psbin)
+    def method_noisyB(self, aposcale, psbin, shift, threshold, verbose):
+        modes, noise_ps_t, signal_ps_t = self.method_noisyB_raw(aposcale,psbin)
         # get noise PS mean and rms
         noise_ps_t_mean = np.mean(noise_ps_t,axis=0)
         noise_ps_t_std = np.std(noise_ps_t,axis=0)

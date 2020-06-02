@@ -1,6 +1,5 @@
 import logging as log
 import numpy as np
-import dynesty
 from abspy.tools.fg_models import syncdustmodel
 from abspy.tools.bg_models import cmbmodel
 from abspy.tools.ps_estimator import pstimator

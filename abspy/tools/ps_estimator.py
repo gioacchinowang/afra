@@ -8,10 +8,11 @@ import numpy as np
 import logging as log
 from abspy.tools.icy_decorator import icy
 
+
 @icy
 class pstimator(object):
 
-    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmax=800):
+    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmax=None):
         """
         Parameters
         ----------
@@ -32,10 +33,10 @@ class pstimator(object):
             Maximal angular mode.
         """
         self.nside = nside
-        self.mask = mask
         self.aposcale = aposcale
         self.psbin = psbin
         self.lmax = lmax
+        self.mask = mask
         
     @property
     def nside(self):
@@ -66,12 +67,13 @@ class pstimator(object):
         
     @mask.setter
     def mask(self, mask):
+        """apply apodization during initialization"""
         if mask is None:
-            self._mask = np.ones((1,self._npix))
+            self._mask = np.ones((1,self._npix),dtype=np.float64)
         else:
             assert isinstance(mask, np.ndarray)
             assert (mask.shape == (1,self._npix))
-            self._mask = mask
+            self._mask = nmt.mask_apodization(mask[0], self._aposcale, apotype='C1').reshape(1,-1)
         
     @aposcale.setter
     def aposcale(self, aposcale):
@@ -92,9 +94,12 @@ class pstimator(object):
             
     @lmax.setter
     def lmax(self, lmax):
-        assert isinstance(lmax, int)
-        assert (lmax > 0)
-        self._lmax = lmax
+        if lmax is None:
+            self._lmax = 2*self._nside
+        else:
+            assert isinstance(lmax, int)
+            assert (lmax < 3*self._nside)
+            self._lmax = lmax
         
     def auto_t(self, maps, wsp=None, fwhms=None):
         """
@@ -122,12 +127,12 @@ class pstimator(object):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (1,self._npix))
         # mask apodization
-        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
+        #_apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
         # assemble NaMaster fields
         if fwhms is None:
-            _f0 = nmt.NmtField(_apd_mask, [maps[0]])
+            _f0 = nmt.NmtField(self._mask[0], [maps[0]])
         else:
-            _f0 = nmt.NmtField(_apd_mask, [maps[0]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+            _f0 = nmt.NmtField(self._mask[0], [maps[0]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
         _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
@@ -169,16 +174,16 @@ class pstimator(object):
         assert (maps.shape == (2,self._npix))
         assert (len(fwhms) == 2)
         # mask apodization
-        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
+        #_apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
         # assemble NaMaster fields
         if fwhms[0] is None:
-            _f01 = nmt.NmtField(_apd_mask, [maps[0]])
+            _f01 = nmt.NmtField(self._mask[0], [maps[0]])
         else:
-            _f01 = nmt.NmtField(_apd_mask, [maps[0]], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
+            _f01 = nmt.NmtField(self._mask[0], [maps[0]], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
         if fwhms[1] is None:
-            _f02 = nmt.NmtField(_apd_mask, [maps[1]])
+            _f02 = nmt.NmtField(self._mask[0], [maps[1]])
         else:
-            _f02 = nmt.NmtField(_apd_mask, [maps[1]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+            _f02 = nmt.NmtField(self._mask[0], [maps[1]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
         _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
@@ -219,12 +224,12 @@ class pstimator(object):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (2,self._npix))
         # mask apodization
-        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
+        #_apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
         # assemble NaMaster fields
         if fwhms is None:
-            _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
+            _f2 = nmt.NmtField(self._mask[0], [maps[0], maps[1]], purify_e=False, purify_b=True)
         else:
-            _f2 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+            _f2 = nmt.NmtField(self._mask[0], [maps[0], maps[1]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms, 3*self._nside-1))
         _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
@@ -266,16 +271,16 @@ class pstimator(object):
         assert (maps.shape == (4,self._npix))
         assert (len(fwhms) == 2)
         # mask apodization
-        _apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
+        #_apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
         # assemble NaMaster fields
         if fwhms[0] is None:
-            _f21 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True)
+            _f21 = nmt.NmtField(self._mask[0], [maps[0], maps[1]], purify_e=False, purify_b=True)
         else:
-            _f21 = nmt.NmtField(_apd_mask, [maps[0], maps[1]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
+            _f21 = nmt.NmtField(self._mask[0], [maps[0], maps[1]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
         if fwhms[1] is None:
-            _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]], purify_e=False, purify_b=True)
+            _f22 = nmt.NmtField(self._mask[0], [maps[2], maps[3]], purify_e=False, purify_b=True)
         else:
-            _f22 = nmt.NmtField(_apd_mask, [maps[2], maps[3]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+            _f22 = nmt.NmtField(self._mask[0], [maps[2], maps[3]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
         _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:

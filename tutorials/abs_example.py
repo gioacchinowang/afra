@@ -11,9 +11,10 @@ def main():
     prepare your singal, variance and mask maps
     """
     NSIDE = 128
-    NSAMP = 200  # global sampling size
+    NSAMP = 500  # global sampling size
     NFREQ = 4  # frequency band
     FWHMS = [1.e-3]*NFREQ # beam FWHM each frequencies
+    APOSCALE = 6.
     PSBIN = 40  # number of angular modes per band power bin
     SHIFT_T = 30.  # CMB bandpower shift
     SHIFT_EB = 30.
@@ -44,16 +45,16 @@ def main():
     
     pipeline1 = ap.abspipe(fullmap,nfreq=NFREQ,nmap=1,nside=NSIDE,mask=maskmap.reshape(1,-1),variances=fullvar,fwhms=FWHMS)
     pipeline1.nsamp = NSAMP
-    rslt_t = pipeline1.run(psbin=PSBIN,shift=SHIFT_T,threshold=CUT_T)
+    rslt_t = pipeline1.run(aposcale=APOSCALE,psbin=PSBIN,shift=SHIFT_T,threshold=CUT_T)
     
     fullmap = signalmaps[:,1:,:].reshape(NFREQ,2,12*NSIDE**2)
     fullvar = varmaps[:,1:,:].reshape(NFREQ,2,12*NSIDE**2)
     
     pipeline2 = ap.abspipe(fullmap,nfreq=NFREQ,nmap=2,nside=NSIDE,mask=maskmap.reshape(1,-1),variances=fullvar,fwhms=FWHMS)
     pipeline2.nsamp = NSAMP
-    rslt_eb = pipeline2.run(psbin=PSBIN,shift=SHIFT_EB,threshold=CUT_EB)
+    rslt_eb = pipeline2.run(aposcale=APOSCALE,psbin=PSBIN,shift=SHIFT_EB,threshold=CUT_EB)
     
-    output = np.zeros((7,len(rslt_t[0])))
+    output = np.zeros((10,len(rslt_t[0])))
     output[0] = rslt_t[0]
     output[1] = rslt_t[1]
     output[2] = rslt_t[2]
@@ -62,18 +63,15 @@ def main():
     output[5] = rslt_eb[3]
     output[6] = rslt_eb[4]
     
-    np.save('abs_example.npy',output)
-    
-    est = ap.pstimator(nside=NSIDE,mask=maskmap.reshape(1,-1), aposcale=5.0, psbin=PSBIN)
+    est = ap.pstimator(nside=NSIDE,mask=maskmap.reshape(1,-1),aposcale=APOSCALE,psbin=PSBIN)
     auto_cmb_t = est.auto_t(cmbmap[0].reshape(1,-1),fwhms=FWHMS[0])
     auto_cmb_eb = est.auto_eb(cmbmap[1:].reshape(2,-1),fwhms=FWHMS[0])
     
-    output[0] = auto_cmb_t[0]
-    output[1] = auto_cmb_t[1]
-    output[2] = auto_cmb_eb[1]
-    output[3] = auto_cmb_eb[2]
+    output[7] = auto_cmb_t[1]
+    output[8] = auto_cmb_eb[1]
+    output[9] = auto_cmb_eb[2]
     
-    np.save('abs_cmb.npy',output[:4])
+    np.save('abs_example.npy',output)
         
 
 if __name__ == '__main__':
