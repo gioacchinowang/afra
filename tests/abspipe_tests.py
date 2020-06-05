@@ -23,7 +23,7 @@ class TestABSpipe(unittest.TestCase):
                             nfreq=4,
                             nmap=1,
                             nside=4)
-        test_result = test_pipe(psbin=1)
+        test_result = test_pipe(aposcale=1.,psbin=1)
         
     def test_sainity_QUmap(self):
         np.random.seed(234)
@@ -32,7 +32,7 @@ class TestABSpipe(unittest.TestCase):
                             nfreq=4,
                             nmap=2,
                             nside=4)
-        test_result = test_pipe(psbin=1)
+        test_result = test_pipe(aposcale=1.,psbin=1)
 
 if __name__ == '__main__':
     unittest.main()
