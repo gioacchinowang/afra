@@ -1,8 +1,9 @@
 import logging as log
 import numpy as np
 from abspy.tools.icy_decorator import icy
-from abspy.tools.fg_models import fgmodel, syncdustmodel
-from abspy.tools.bg_models import bgmodel, cmbmodel
+from abspy.tools.tpfit_aux import *
+from abspy.tools.fg_models import *
+from abspy.tools.bg_models import *
 import pymultinest
 
 
@@ -18,7 +19,7 @@ class tpfit(object):
         signal cross PS bandpower in shape (# mode, # freq, # freq)
         
     noise : numpy.ndarray
-        noise cross PS bandpower in shape (# mode, # freq, # freq)
+        noise cross PS bandpower in shape (# mode, # freq, # freq) or (# mode*# eff freq, # mode*# eff freq)
         
     template : numpy.ndarray
         template cross PS bandpower in shape (# mode, # ref)
@@ -117,7 +118,7 @@ class tpfit(object):
         assert (signal.shape[0] == self._nmode)  # number of angular modes
         assert (signal.shape[1] == self._nfreq) # number of frequency bands
         assert (signal.shape[1] == signal.shape[2])
-        self._signal = signal
+        self._signal = vecp(signal)  # vectorize signal matrix
         log.debug('signal cross-PS read')
         
     @noise.setter
@@ -126,7 +127,7 @@ class tpfit(object):
         assert (noise.shape[0] == self._nmode)  # number of angular modes
         assert (noise.shape[1] == self._nfreq) # number of frequency bands
         assert (noise.shape[1] == noise.shape[2])
-        self._noise = noise
+        self._noise = vecp(noise)  # vectorize noise matrix
         log.debug('cross-PS std read')
         
     @template.setter
@@ -194,13 +195,12 @@ class tpfit(object):
                 self._active_param_range[name] = self._background.param_range[name]
         #
         self.info
-        # start Dyensty
+        # start sampler
         results = pymultinest.solve(LogLikelihood=self._core_likelihood,
                                     Prior=self.prior,
                                     n_dims=len(self.active_param_list),
                                     **self.sampling_opt)
         return results
-        
         
     def _core_likelihood(self, cube):
         """
@@ -237,14 +237,13 @@ class tpfit(object):
         #print ('background reset', self._background.params)
         #import os
         #os.exit(1)
-        bp = self._foreground.bandpower(self._freqs) + self._background.bandpower(self._freqs)
-        #
+        bp = vecp(self._foreground.bandpower(self._freqs) + self._background.bandpower(self._freqs))
         return self.loglikeli(bp)
         
     def loglikeli(self, predicted):
         """log-likelihood calculator"""
         assert (predicted.shape == self._signal.shape)
-        return np.sum(-0.5*np.log((self._signal.reshape(1,-1) - predicted.reshape(1,-1))**2/self._noise.reshape(1,-1)**2))
+        return -0.5*np.sum(np.log((self._signal - predicted)**2/self._noise**2))
         
     def prior(self, cube):
         """flat prior"""

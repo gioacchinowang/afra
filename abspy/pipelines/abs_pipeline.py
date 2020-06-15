@@ -74,6 +74,8 @@ class abspipe(object):
                            (False,2): self.method_pureEB}
         # resampling size
         self.nsamp = 1000
+        # debug mode
+        self.debug = False
 
     @property
     def signals(self):
@@ -102,6 +104,10 @@ class abspipe(object):
     @property
     def nsamp(self):
         return self._nsamp
+        
+    @property
+    def debug(self):
+        return self._debug
         
     @property
     def lmax(self):
@@ -182,6 +188,12 @@ class abspipe(object):
         self._nsamp = nsamp
         log.debug('resampling size set: %s' % str(self._nsamp))
         
+    @debug.setter
+    def debug(self, debug):
+        assert isinstance(debug, bool)
+        self._debug = debug
+        log.debug('debug mode: %s' % str(self._debug))
+        
     @fwhms.setter
     def fwhms(self, fwhms):
         if fwhms is None:
@@ -247,7 +259,7 @@ class abspipe(object):
         """
         est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run a trial PS estimation
-        trial = est.auto_t(self._signals[0,0].reshape(1,-1))
+        trial = est.auto_t(self._signals[0])  # T map comes in shape (# freq, 1, # pix)
         modes = trial[0]
         # prepare total signals PS in the shape required by ABS method
         signal_ps_t = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
@@ -259,7 +271,7 @@ class abspipe(object):
                 signal_ps_t[k,i,i] = stmp[1][k]
             # cross correlation
             for j in range(i+1,self._nfreq):
-                stmp = est.cross_t(np.vstack([self._signals[i],self._signals[j]]),fwhms=[self._fwhms[i],self._fwhms[j]])
+                stmp = est.cross_t(np.r_[self._signals[i],self._signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
                 for k in range(len(modes)):
                     signal_ps_t[k,i,j] = stmp[1][k]
                     signal_ps_t[k,j,i] = stmp[1][k]
@@ -284,7 +296,7 @@ class abspipe(object):
         wsp_dict = dict()
         modes = None
         for i in range(self._nfreq):
-            tmp = est.auto_t(self._signals[0,0].reshape(1,-1),fwhms=self._fwhms[i])
+            tmp = est.auto_t(self._signals[0],fwhms=self._fwhms[i])
             wsp_dict[(i,i)] = tmp[-1]  # register workspace
             modes = tmp[0]  # register angular modes
             for j in range(i+1,self._nfreq):
@@ -342,7 +354,11 @@ class abspipe(object):
             rslt_Dt[s] = spt_t.run()
         if verbose:
             spt_t = abssep(np.mean(signal_ps_t,axis=0),noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
+            if self._debug:
+                return (modes, rslt_Dt, spt_t.run_info())
             return (modes, np.mean(rslt_Dt,axis=0), np.std(rslt_Dt,axis=0), spt_t.run_info())
+        if self._debug:
+            return (modes, rslt_Dt)
         return (modes, np.mean(rslt_Dt,axis=0), np.std(rslt_Dt,axis=0))
     
     def method_pureEB(self, aposcale, psbin, shift, threshold, verbose):
@@ -370,7 +386,7 @@ class abspipe(object):
                 signal_ps_b[k,i,i] = stmp[2][k]
             # cross corr
             for j in range(i+1,self._nfreq):
-                stmp = est.cross_eb(np.vstack([self._signals[i],self._signals[j]]),fwhms=[self._fwhms[i],self._fwhms[j]])
+                stmp = est.cross_eb(np.r_[self._signals[i],self._signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
                 for k in range(len(modes)):
                     signal_ps_e[k,i,j] = stmp[1][k]
                     signal_ps_b[k,i,j] = stmp[2][k]
@@ -480,7 +496,11 @@ class abspipe(object):
         if verbose:
             spt_e = abssep(np.mean(signal_ps_e,axis=0),noise_ps_e_mean,noise_ps_e_std_diag,shift=safe_shift_e,threshold=threshold)
             spt_b = abssep(np.mean(signal_ps_b,axis=0),noise_ps_b_mean,noise_ps_b_std_diag,shift=safe_shift_b,threshold=threshold)
+            if self._debug:
+                return (modes, rslt_De, rslt_Db, spt_e.run_info(), spt_b.run_info())
             return (modes, np.mean(rslt_De,axis=0), np.std(rslt_De,axis=0), np.mean(rslt_Db,axis=0), np.std(rslt_Db,axis=0), spt_e.run_info(), spt_b.run_info())
+        if self._debug:
+            return (modes, rslt_De, rslt_Db)
         return (modes, np.mean(rslt_De,axis=0), np.std(rslt_De,axis=0), np.mean(rslt_Db,axis=0), np.std(rslt_Db,axis=0))
         
     def method_pureB(self, aposcale, psbin, shift, threshold, verbose):
@@ -590,7 +610,11 @@ class abspipe(object):
             rslt_Dt[s] = spt_t.run()
         if verbose:
             spt_t = abssep(np.mean(signal_ps_t,axis=0),noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
+            if self._debug:
+                return (modes, rslt_Dt, spt_t.run_info())
             return (modes, np.mean(rslt_Dt,axis=0), np.std(rslt_Dt,axis=0), spt_t.run_info())
+        if self._debug:
+            return (modes, rslt_Dt)
         return (modes, np.mean(rslt_Dt,axis=0), np.std(rslt_Dt,axis=0))
 
     def purify(self):

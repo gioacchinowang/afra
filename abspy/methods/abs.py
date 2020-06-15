@@ -167,8 +167,6 @@ class abssep(object):
         for ell in range(self._lsize):
             # eigvec[:,i] corresponds to eigval[i]
             eigval, eigvec = np.linalg.eig(DL[ell])
-            for i in range(self._fsize):
-                eigvec[:,i] /= np.linalg.norm(eigvec[:,i])**2
             tmp = 0
             for i in range(self._fsize):
                 if self._threshold is None:

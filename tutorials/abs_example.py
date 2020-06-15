@@ -13,7 +13,7 @@ def main():
     LMAX = 200
     NSAMP = 500  # global sampling size
     NFREQ = 4  # frequency band
-    FWHMS = [1.e-3]*NFREQ # beam FWHM each frequencies
+    FWHMS = [0]*NFREQ # beam FWHM each frequencies
     APOSCALE = 6.
     PSBIN = 40  # number of angular modes per band power bin
     SHIFT_T = 10.  # CMB bandpower shift
@@ -29,10 +29,10 @@ def main():
     signalmaps[3] = hp.read_map('./data/TQU_353GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
     
     varmaps = np.zeros((NFREQ,3,12*NSIDE**2))
-    varmaps[0] = hp.read_map('./data/TQU_var_30GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
-    varmaps[1] = hp.read_map('./data/TQU_var_95GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
-    varmaps[2] = hp.read_map('./data/TQU_var_150GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
-    varmaps[3] = hp.read_map('./data/TQU_var_353GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+    varmaps[0] = hp.read_map('./data/TQU_plkvar_30GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+    varmaps[1] = hp.read_map('./data/TQU_alivar_95GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+    varmaps[2] = hp.read_map('./data/TQU_alivar_150GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
+    varmaps[3] = hp.read_map('./data/TQU_plkvar_353GHz_r7.fits',field=[0,1,2],dtype=np.float64,verbose=0)
     
     maskmap = hp.read_map('./data/ali_mask_r7.fits',dtype=np.float64,verbose=0)
     
@@ -45,6 +45,7 @@ def main():
     
     pipeline1 = ap.abspipe(fullmap,nfreq=NFREQ,nmap=1,nside=NSIDE,mask=maskmap.reshape(1,-1),variances=fullvar,fwhms=FWHMS,lmax=LMAX)
     pipeline1.nsamp = NSAMP
+    pipeline1.debug = True
     rslt_t = pipeline1.run(aposcale=APOSCALE,psbin=PSBIN,shift=SHIFT_T,threshold=CUT_T)
     
     fullmap = signalmaps[:,1:,:].reshape(NFREQ,2,12*NSIDE**2)
@@ -52,25 +53,24 @@ def main():
     
     pipeline2 = ap.abspipe(fullmap,nfreq=NFREQ,nmap=2,nside=NSIDE,mask=maskmap.reshape(1,-1),variances=fullvar,fwhms=FWHMS,lmax=LMAX)
     pipeline2.nsamp = NSAMP
+    pipeline2.debug = True
     rslt_eb = pipeline2.run(aposcale=APOSCALE,psbin=PSBIN,shift=SHIFT_EB,threshold=CUT_EB)
     
-    output = np.zeros((10,len(rslt_t[0])))
-    output[0] = rslt_t[0]
-    output[1] = rslt_t[1]
-    output[2] = rslt_t[2]
-    output[3] = rslt_eb[1]
-    output[4] = rslt_eb[2]
-    output[5] = rslt_eb[3]
-    output[6] = rslt_eb[4]
+    output = list()
+    output.append(rslt_t[0])
+    output.append(rslt_t[1])
+    output.append(rslt_eb[1])
+    output.append(rslt_eb[2])
     
     cmbmap[:,maskmap<1] = 0.
     est = ap.pstimator(nside=NSIDE,mask=maskmap.reshape(1,-1),aposcale=APOSCALE,psbin=PSBIN,lmax=LMAX)
     auto_cmb_t = est.auto_t(cmbmap[0].reshape(1,-1),fwhms=FWHMS[0])
     auto_cmb_eb = est.auto_eb(cmbmap[1:].reshape(2,-1),fwhms=FWHMS[0])
     
-    output[7] = auto_cmb_t[1]
-    output[8] = auto_cmb_eb[1]
-    output[9] = auto_cmb_eb[2]
+    output.append(auto_cmb_t[1])
+    output.append(auto_cmb_eb[1])
+    output.append(auto_cmb_eb[2])
+    output.append('list components: ell, ABS TT bps, ABS EE bps, ABS BB bps, CMB TT bps, CMB EE bps, CMB BB bps')
     
     np.save('abs_example.npy',output)
         
