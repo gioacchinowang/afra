@@ -1,8 +1,10 @@
 import logging as log
 import numpy as np
 import healpy as hp
+from copy import deepcopy
 from abspy.methods.abs import abssep
 from abspy.tools.ps_estimator import pstimator
+from abspy.tools.aux import vecp, hl_g
 from abspy.tools.icy_decorator import icy
 
 
@@ -152,7 +154,7 @@ class abspipe(object):
     def signals(self, signals):
         assert isinstance(signals, np.ndarray)
         assert (signals.shape == (self._nfreq,self._nmap,self._npix))
-        self._signals = signals
+        self._signals = signals.copy()
         log.debug('signal maps loaded')
         
     @variances.setter
@@ -161,9 +163,10 @@ class abspipe(object):
             assert isinstance(variances, np.ndarray)
             assert (variances.shape == (self._nfreq,self._nmap,self._npix))
             self._noise_flag = True
+            self._variances = variances.copy()
         else:
             self._noise_flag = False
-        self._variances = variances
+            self._variances = None
         log.debug('variance maps loaded')
         
     @mask.setter
@@ -173,7 +176,7 @@ class abspipe(object):
         else:
             assert isinstance(mask, np.ndarray)
             assert (mask.shape == (1,self._npix))
-            self._mask = mask
+            self._mask = mask.copy()
         # clean up input maps with mask
         mflag = self._mask[0] < 1.
         self._mask[:,mflag] = 0.
@@ -201,7 +204,7 @@ class abspipe(object):
         else:
             assert isinstance(fwhms, (list,tuple))
             assert (len(fwhms) == self._nfreq)
-            self._fwhms = fwhms
+            self._fwhms = deepcopy(fwhms)
         log.debug('fwhms loaded')
         
     def __call__(self, aposcale, psbin, shift=None, threshold=None, verbose=False):
@@ -258,9 +261,7 @@ class abspipe(object):
         angular modes, T-mode PS
         """
         est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
-        # run a trial PS estimation
-        trial = est.auto_t(self._signals[0])  # T map comes in shape (# freq, 1, # pix)
-        modes = trial[0]
+        modes = est.modes
         # prepare total signals PS in the shape required by ABS method
         signal_ps_t = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
@@ -371,10 +372,7 @@ class abspipe(object):
         angular modes, E-mode PS, B-mode
         """
         est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
-        # run a trial PS estimation
-        trial = est.auto_eb(self._signals[0])
-        modes = trial[0]  # register angular modes
-        #wsp = trial[-1]  # register workspace
+        modes = est.modes  # register angular modes
         signal_ps_e = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
         signal_ps_b = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
@@ -515,8 +513,7 @@ class abspipe(object):
         # get B mode maps from self._signals
         bmaps = self.purify()
         # run a trial PS estimation
-        trial = est.auto_t(bmaps[0,0].reshape(1,-1))
-        modes = trial[0]
+        modes = est.modes
         # prepare total signals PS in the shape required by ABS method
         signal_ps_t = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):

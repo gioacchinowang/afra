@@ -29,6 +29,7 @@ WORKDIR /home/lab/PyMultiNest
 RUN python3 setup.py install
 WORKDIR /home/lab
 
+# NaMaster
 RUN mkdir /home/lab/fftw
 RUN wget http://www.fftw.org/fftw-3.3.8.tar.gz && tar xzf fftw-3.3.8.tar.gz -C fftw --strip-components 1
 WORKDIR fftw
@@ -52,6 +53,9 @@ RUN git clone https://github.com/LSSTDESC/NaMaster.git namaster
 WORKDIR /home/lab/namaster
 RUN pip3 install .
 WORKDIR /home/lab
+
+#pysm & camb
+RUN pip3 install camb pysm3
 
 #ABSpy
 RUN git clone https://github.com/gioacchinowang/ABSpy.git abspy

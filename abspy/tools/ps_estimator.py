@@ -37,6 +37,8 @@ class pstimator(object):
         self.psbin = psbin
         self.lmax = lmax
         self.mask = mask
+        self._b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
+        self._modes = self._b.get_effective_ells()
         
     @property
     def nside(self):
@@ -57,6 +59,10 @@ class pstimator(object):
     @property
     def lmax(self):
         return self._lmax
+
+    @property
+    def modes(self):
+        return self._modes
         
     @nside.setter
     def nside(self, nside):
@@ -73,7 +79,7 @@ class pstimator(object):
         else:
             assert isinstance(mask, np.ndarray)
             assert (mask.shape == (1,self._npix))
-            self._mask = nmt.mask_apodization(mask[0], self._aposcale, apotype='C1').reshape(1,-1)
+            self._mask = nmt.mask_apodization(mask[0], self._aposcale, apotype='C2').reshape(1,-1)
         
     @aposcale.setter
     def aposcale(self, aposcale):
@@ -126,26 +132,22 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (1,self._npix))
-        # mask apodization
-        #_apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
         # assemble NaMaster fields
         if fwhms is None:
             _f0 = nmt.NmtField(self._mask[0], [maps[0]])
         else:
             _f0 = nmt.NmtField(self._mask[0], [maps[0]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
-        _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
-            _w.compute_coupling_matrix(_f0, _f0, _b)
+            _w.compute_coupling_matrix(_f0, _f0, self._b)
             _cl00c = nmt.compute_coupled_cell(_f0, _f0)
             _cl00 = _w.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), _cl00[0], _w)
+            return (self._modes, _cl00[0], _w)
         else:
             _cl00c = nmt.compute_coupled_cell(_f0, _f0)
             _cl00 = wsp.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), _cl00[0])
-        
+            return (self._modes, _cl00[0])
         
     def cross_t(self, maps, wsp=None, fwhms=[None,None]):
         """
@@ -173,8 +175,6 @@ class pstimator(object):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (2,self._npix))
         assert (len(fwhms) == 2)
-        # mask apodization
-        #_apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='Smooth')
         # assemble NaMaster fields
         if fwhms[0] is None:
             _f01 = nmt.NmtField(self._mask[0], [maps[0]])
@@ -184,18 +184,17 @@ class pstimator(object):
             _f02 = nmt.NmtField(self._mask[0], [maps[1]])
         else:
             _f02 = nmt.NmtField(self._mask[0], [maps[1]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
-        _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
-            _w.compute_coupling_matrix(_f01, _f02, _b)
+            _w.compute_coupling_matrix(_f01, _f02, self._b)
             _cl00c = nmt.compute_coupled_cell(_f01, _f02)
             _cl00 = _w.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), _cl00[0], _w)
+            return (self._modes, _cl00[0], _w)
         else:
             _cl00c = nmt.compute_coupled_cell(_f01, _f02)
             _cl00 = wsp.decouple_cell(_cl00c)
-            return (_b.get_effective_ells(), _cl00[0])
+            return (self._modes, _cl00[0])
     
     def auto_eb(self, maps, wsp=None, fwhms=None):
         """
@@ -223,25 +222,22 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (2,self._npix))
-        # mask apodization
-        #_apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
         # assemble NaMaster fields
         if fwhms is None:
             _f2 = nmt.NmtField(self._mask[0], [maps[0], maps[1]], purify_e=False, purify_b=True)
         else:
             _f2 = nmt.NmtField(self._mask[0], [maps[0], maps[1]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms, 3*self._nside-1))
-        _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
-            _w.compute_coupling_matrix(_f2, _f2, _b)
+            _w.compute_coupling_matrix(_f2, _f2, self._b)
             _cl22c = nmt.compute_coupled_cell(_f2, _f2)
             _cl22 = _w.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), _cl22[0], _cl22[3], _w)
+            return (self._modes, _cl22[0], _cl22[3], _cl22[1], _w)
         else:
             _cl22c = nmt.compute_coupled_cell(_f2, _f2)
             _cl22 = wsp.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), _cl22[0], _cl22[3])
+            return (self._modes, _cl22[0], _cl22[3], _cl22[1])
         
     def cross_eb(self, maps, wsp=None, fwhms=[None,None]):
         """
@@ -270,8 +266,6 @@ class pstimator(object):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (4,self._npix))
         assert (len(fwhms) == 2)
-        # mask apodization
-        #_apd_mask = nmt.mask_apodization(self._mask[0], self._aposcale, apotype='C1')
         # assemble NaMaster fields
         if fwhms[0] is None:
             _f21 = nmt.NmtField(self._mask[0], [maps[0], maps[1]], purify_e=False, purify_b=True)
@@ -281,15 +275,52 @@ class pstimator(object):
             _f22 = nmt.NmtField(self._mask[0], [maps[2], maps[3]], purify_e=False, purify_b=True)
         else:
             _f22 = nmt.NmtField(self._mask[0], [maps[2], maps[3]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
-        _b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
         # estimate PS
         if wsp is None:
             _w = nmt.NmtWorkspace()
-            _w.compute_coupling_matrix(_f21, _f22, _b)
+            _w.compute_coupling_matrix(_f21, _f22, self._b)
             _cl22c = nmt.compute_coupled_cell(_f21, _f22)
             _cl22 = _w.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), _cl22[0], _cl22[3], _w)
+            return (self._modes, _cl22[0], _cl22[3], _cl22[1], _w)
         else:
             _cl22c = nmt.compute_coupled_cell(_f21, _f22)
             _cl22 = wsp.decouple_cell(_cl22c)
-            return (_b.get_effective_ells(), _cl22[0], _cl22[3])
+            return (self._modes, _cl22[0], _cl22[3], _cl22[1])
+
+    def auto_teb(self, maps, fwhms=None):
+        assert isinstance(maps, np.ndarray)
+        assert (maps.shape == (3,self._npix))
+        # assemble NaMaster fields
+        if fwhms is None:
+            _f0 = nmt.NmtField(self._mask[0], [maps[0]])
+            _f2 = nmt.NmtField(self._mask[0], [maps[1], maps[2]], purify_e=False, purify_b=True)
+        else:
+            _f0 = nmt.NmtField(self._mask[0], [maps[0]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+            _f2 = nmt.NmtField(self._mask[0], [maps[1], maps[2]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+        # estimate PS
+        _cl00 = nmt.compute_full_master(_f0, _f0, self._b)
+        _cl02 = nmt.compute_full_master(_f0, _f2, self._b)
+        _cl22 = nmt.compute_full_master(_f2, _f2, self._b)
+        return (self._modes, _cl00[0], _cl02[0], _cl02[1], _cl22[0], _cl22[1], _cl22[3])
+    
+    def cross_teb(self, maps, wsp=None, fwhms=[None,None]):
+        assert isinstance(maps, np.ndarray)
+        assert (maps.shape == (6,self._npix))
+        # assemble NaMaster fields
+        if fwhms[0] is None:
+            _f01 = nmt.NmtField(self._mask[0], [maps[0]])
+            _f21 = nmt.NmtField(self._mask[0], [maps[1], maps[2]], purify_e=False, purify_b=True)
+        else:
+            _f01 = nmt.NmtField(self._mask[0], [maps[0]], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
+            _f21 = nmt.NmtField(self._mask[0], [maps[1], maps[2]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
+        if fwhms[1] is None:
+            _f02 = nmt.NmtField(self._mask[0], [maps[3]])
+            _f22 = nmt.NmtField(self._mask[0], [maps[4], maps[5]], purify_e=False, purify_b=True)
+        else:
+            _f02 = nmt.NmtField(self._mask[0], [maps[3]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+            _f22 = nmt.NmtField(self._mask[0], [maps[4], maps[5]], purify_e=False, purify_b=True, beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+        # estimate PS
+        _cl00 = nmt.compute_full_master(_f01, _f02, self._b)
+        _cl02 = nmt.compute_full_master(_f01, _f22, self._b)
+        _cl22 = nmt.compute_full_master(_f21, _f22, self._b)
+        return (self._modes, _cl00[0], _cl02[0], _cl02[1], _cl22[0], _cl22[1], _cl22[3])

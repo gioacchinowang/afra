@@ -86,38 +86,40 @@ class abssep(object):
         self._lsize = signal.shape[0]  # number of angular modes
         self._fsize = signal.shape[1]  # number of frequency bands
         assert (signal.shape[1] == signal.shape[2])
-        self._signal = signal
+        self._signal = signal.copy()
         log.debug('signal cross-PS read')
         
     @noise.setter
     def noise(self, noise):
         if noise is None:
+            self._noise = None
             log.debug('without noise cross-PS')
         else:
             assert isinstance(noise, np.ndarray)
             assert (noise.shape[0] == self._lsize)
             assert (noise.shape[1] == self._fsize)
             assert (noise.shape[1] == noise.shape[2])
+            self._noise = noise.copy()
             log.debug('noise cross-PS read')
-        self._noise = noise
         
     @sigma.setter
     def sigma(self, sigma):
         if sigma is None:
+            self._sigma = None
             log.debug('without noise RMS')
         else:
             assert isinstance(sigma, np.ndarray)
             assert (sigma.shape[0] == self._lsize)
             assert (sigma.shape[1] == self._fsize)
+            self._sigma = sigma.copy()
             log.debug('noise RMS auto-PS read')
-        self._sigma = sigma
-        
+     
     @shift.setter
     def shift(self, shift):
         if shift is not None:
             assert isinstance(shift, np.ndarray)
             assert (len(shift) == self._lsize)
-            self._shift = shift
+            self._shift = shift.copy()
         else:
             self._shift = np.zeros(self._lsize)
         log.debug('PS power shift set: %s' % str(self._shift))
@@ -150,7 +152,7 @@ class abssep(object):
         
     def run(self):
         # binned average, converted to band power
-        DL = self._signal
+        DL = self._signal.copy()
         RL = np.ones((self._lsize,self._fsize),dtype=np.float64)
         RL_tensor = np.ones((self._lsize,self._fsize,self._fsize),dtype=np.float64)
         if self._noise_flag:
@@ -180,7 +182,7 @@ class abssep(object):
         
     def run_info(self):
         # binned average, converted to band power
-        DL = self._signal
+        DL = self._signal.copy()
         RL = np.ones((self._lsize,self._fsize),dtype=np.float64)
         RL_tensor = np.ones((self._lsize,self._fsize,self._fsize),dtype=np.float64)
         if self._noise_flag:

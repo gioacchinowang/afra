@@ -14,6 +14,15 @@ class TestBinning(unittest.TestCase):
         tmp = np.triu(input_cps[1])
         manual_vecp[6:] = tmp[tmp!=0]
         self.assertListEqual(list(output_vecp),list(manual_vecp))
+
+    def test_vecs(self):
+        input_cps1 = np.zeros(10)
+        input_cps2 = np.ones(10)
+        output_vecs = vecs([input_cps1,input_cps2])
+        manual_vecs = np.ones(20)
+        for i in range(10):
+            manual_vecs[i*2] = 0.
+        self.assertListEqual(list(manual_vecs),list(output_vecs))
 		
     def test_binning(self):
         # prepare D_ell

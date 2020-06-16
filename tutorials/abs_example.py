@@ -70,7 +70,6 @@ def main():
     output.append(auto_cmb_t[1])
     output.append(auto_cmb_eb[1])
     output.append(auto_cmb_eb[2])
-    output.append('list components: ell, ABS TT bps, ABS EE bps, ABS BB bps, CMB TT bps, CMB EE bps, CMB BB bps')
     
     np.save('abs_example.npy',output)
         

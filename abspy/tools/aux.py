@@ -156,23 +156,45 @@ def oas_cov(sample):
     
     
 def vecp(cps):
-	"""vectorize cross-power-spectrum band power
-	with repeated symetric elements trimed
+    """vectorize cross-power-spectrum band power
+    with repeated symetric elements trimed
 	
-	Parameters
-	----------
+    Parameters
+    ----------
 	
-	cps : numpy.ndarray
-		cross-PS with dimension (# modes, # freq, # freq)
-	"""
-	assert isinstance(cps, np.ndarray)
-	assert (len(cps.shape) == 3)
-	assert (cps.shape[1] == cps.shape[2])
-	_nmodes = cps.shape[0]
-	_nfreq = cps.shape[1]
-	_neffeq = _nfreq*(_nfreq+1)//2
-	_rslt = np.zeros(_nmodes*_neffeq)
-	for _l in range(_nmodes):
-		_trimed = np.triu(cps[_l],k=0)
-		_rslt[_l*_neffeq:(_l+1)*_neffeq] = _trimed[_trimed!=0]
-	return _rslt
+    cps : numpy.ndarray
+    cross-PS with dimension (# modes, # freq, # freq)
+    """
+    assert isinstance(cps, np.ndarray)
+    assert (len(cps.shape) == 3)
+    assert (cps.shape[1] == cps.shape[2])
+    _nmode = cps.shape[0]
+    _nfreq = cps.shape[1]
+    _dof = _nfreq*(_nfreq+1)//2
+    _rslt = np.zeros(_nmode*_dof)
+    for _l in range(_nmode):
+        _trimed = np.triu(cps[_l],k=0)
+        _rslt[_l*_dof:(_l+1)*_dof] = _trimed[_trimed!=0]
+    return _rslt
+
+def vecs(cps):
+    """reshuffle vecp results with the correct order:
+
+        TT TE TB
+           EE EB
+              BB
+    for each angular mode and each frequency pairs in a row
+    """
+    assert isinstance(cps, (list,tuple))
+    _ntype = len(cps)
+    _len = len(cps[0])
+    _rslt = np.zeros(_ntype*_len)
+    for _i in range(_len):
+        for _j in range(_ntype):
+            _rslt[_i*_ntype+_j] = cps[_j][_i]
+    return _rslt
+
+def hl_g(x):
+    """HL likelihood g(x) function"""
+    assert (x > 0.)
+    return np.sign(x-1.)*np.sqrt(2.*(x-np.log(x)-1.))
