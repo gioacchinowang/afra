@@ -3,6 +3,7 @@ import numpy as np
 from abspy.tools.fg_models import syncdustmodel
 from abspy.tools.bg_models import cmbmodel
 from abspy.tools.ps_estimator import pstimator
+from abspy.tools.aux import vecp, vecs
 from abspy.tools.icy_decorator import icy
 
 
@@ -48,6 +49,7 @@ class tpfpipe(object):
             Number of maps,
             if 1, taken as T maps only,
             if 2, taken as Q,U maps only,
+            if 3, taken as T,Q,U maps
             
         nside : int
             HEALPix Nside
@@ -289,19 +291,81 @@ class tpfpipe(object):
         print (self._psbin)
         print ('PS esitmation noise resampling size, self._nsamp')
         print (self._nsamp)
+
+    def bpmeasure(self, aposcale):
+        """band power from measurements
         
-    def bpestimator(self):
-        """measurements band power estimator,
-        apodization scale bydefault set as 5.0
+        Parameters
+        ----------
+        
+        aposcale : float
+            apodization scale in degree
+
+        Returns
+        -------
+
+        angular modes
+
+        band powers (vectorized)
+            1 map, TT
+            2 maps, EE, EB, BB
+            3 maps, TT, TE, TB, EE, EB, BB
+        """
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=self._psbin)  # init PS estimator
+        modes = est.modes  # angular modes
+        if (self._nmap == 1):
+            # allocate
+            ps_t = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
+            # prepare noise samples on-fly
+            for i in range(self._nfreq):
+                # auto correlation
+                stmp = est.auto_t(self._singals[i].reshape(1,-1),fwhms=self._fwhms[i])
+                # assign results
+                for k in range(len(modes)):
+                    ps_t[k,i,i] = stmp[1][k]
+                # cross correlation
+                for j in range(i+1,self._nfreq):
+                    # cross correlation
+                    stmp = est.cross_t(np.r_[self._signals[i],self._signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    for k in range(len(modes)):
+                        ps_t[k,i,j] = stmp[1][k]
+            return vecp(ps_t)
+        elif (self._nmap == 2):
+            # allocate
+            ps_e = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
+            ps_b = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
+            ps_eb = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
+            for s in range(self._nsamp):
+                # prepare noise samples on-fly
+                for i in range(self._nfreq):
+                    # auto correlation
+                    stmp = est.auto_eb(self._signals[i],fwhms=self._fwhms[i])
+                    # assign results
+                    for k in range(nell):
+                        ps_e[k,i,i] = stmp[1][k]
+                        ps_b[k,i,i] = stmp[2][k]
+                        ps_eb[k,i,i] = stmp[3][k]
+                    # cross correlation
+                    for j in range(i+1,self._nfreq):
+                        # cross correlation
+                        stmp = est.cross_eb(np.r_[self._signals[i],self._signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
+                        for k in range(nell):
+                            ps_e[k,i,j] = stmp[1][k]
+                            ps_b[k,i,j] = stmp[2][k]
+                            ps_eb[k,i,j] = stmp[3][k]
+            return vecs([vecp(ps_e),vecp(ps_eb),vecp(ps_b)])
+        elif (self._nmap == 3):
+            
+        else:
+            raiseValueError('unsupported nmap')
+        
+    def hl_cov(self):
+        """HL likelihood covariance matrix
         
         Returns
         -------
         
-        angular mode list
-        
-        band power mean in shape (# modes, # freq, # freq)
-        
-        band power std in shape (# modes, # freq, # freq)
+        HL likelihood covariance matrix from fiducial CMB model
         """
         if (self._nmap == 1):
             # estimate noise PS and noise RMS

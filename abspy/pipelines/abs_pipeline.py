@@ -394,7 +394,7 @@ class abspipe(object):
         spt_e = abssep(signal_ps_e,shift=shift,threshold=threshold)
         spt_b = abssep(signal_ps_b,shift=shift,threshold=threshold)
         if verbose:
-            return (modes, spe_e.run(), spt_b.run(), spt_e.run_inf(), spt_b.run_info())
+            return (modes, spt_e.run(), spt_b.run(), spt_e.run_info(), spt_b.run_info())
         return (modes, spt_e.run(), spt_b.run())
         
     def method_noisyEB_raw(self, aposcale, psbin):
