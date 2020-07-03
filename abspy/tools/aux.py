@@ -155,7 +155,7 @@ def oas_cov(sample):
     return (1. - _rho) * _s + np.eye(_p) * _rho * _trs / _p
     
     
-def vecp(cps):
+def vec_simple(cps):
     """vectorize cross-power-spectrum band power
     with repeated symetric elements trimed
 	
@@ -163,36 +163,35 @@ def vecp(cps):
     ----------
 	
     cps : numpy.ndarray
-    cross-PS with dimension (# modes, # freq, # freq)
+        cross-PS with dimension (# sample, # modes, # freq, # freq)
+        or                      (# modes, # freq, # freq)
+
+    Returns
+    -------
+    vectorized cps : numpy.ndarray
     """
     assert isinstance(cps, np.ndarray)
-    assert (len(cps.shape) == 3)
-    assert (cps.shape[1] == cps.shape[2])
-    _nmode = cps.shape[0]
-    _nfreq = cps.shape[1]
+    assert (cps.shape[-1] == cps.shape[-2])
+    _nfreq = cps.shape[-2]
+    _nmode = cps.shape[-3]
     _dof = _nfreq*(_nfreq+1)//2
-    _rslt = np.zeros(_nmode*_dof)
-    for _l in range(_nmode):
-        _trimed = np.triu(cps[_l],k=0)
-        _rslt[_l*_dof:(_l+1)*_dof] = _trimed[_trimed!=0]
-    return _rslt
+    if (len(cps.shape) == 3):
+        _rslt = np.zeros(_nmode*_dof)
+        for _l in range(_nmode):
+            _trimed = np.triu(cps[_l],k=0)
+            _rslt[_l*_dof:(_l+1)*_dof] = _trimed[_trimed!=0]
+        return _rslt
+    elif (len(cps.shape) == 4):
+        _nsamp = cps.shape[0]
+        _rslt = np.zeros((_nsamp,_nmode*_dof))
+        for _s in range(_nsamp):
+            for _l in range(_nmode):
+                _trimed = np.triu(cps[_s,_l],k=0)
+                _rslt[_s,_l*_dof:(_l+1)*_dof] = _trimed[_trimed!=0]
+        return _rslt
+    else:
+        raise ValueError('unsupported input shape')
 
-def vecs(cps):
-    """reshuffle vecp results with the correct order:
-
-        TT TE TB
-           EE EB
-              BB
-    for each angular mode and each frequency pairs in a row
-    """
-    assert isinstance(cps, (list,tuple))
-    _ntype = len(cps)
-    _len = len(cps[0])
-    _rslt = np.zeros(_ntype*_len)
-    for _i in range(_len):
-        for _j in range(_ntype):
-            _rslt[_i*_ntype+_j] = cps[_j][_i]
-    return _rslt
 
 def hl_g(x):
     """HL likelihood g(x) function"""

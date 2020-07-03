@@ -1,206 +1,146 @@
 import logging as log
 import numpy as np
 from abspy.tools.icy_decorator import icy
-from abspy.tools.tpfit_aux import *
+from abspy.tools.aux import vec_simple
 from abspy.tools.fg_models import *
 from abspy.tools.bg_models import *
-import pymultinest
+
+import dynesty
 
 
 @icy
-class tpfit(object):
+class tpfit_simple(object):
     """
-    The template fitting class.
+    The template fitting class,
+    symbol X stands for vectorized cross PS band power,
+    which is arranged in EE, BB ordering
     
     Parameters
     ----------
     
     signal : numpy.ndarray
-        signal cross PS bandpower in shape (# mode, # freq, # freq)
+        vectorized signal cross PS bandpower in shape (# X,)
         
-    noise : numpy.ndarray
-        noise cross PS bandpower in shape (# mode, # freq, # freq) or (# mode*# eff freq, # mode*# eff freq)
+    covariance : numpy.ndarray
+        covariance matrix for vectorized signal in shape (# X, # X)
         
-    template : numpy.ndarray
-        template cross PS bandpower in shape (# mode, # ref)
+    template : dict
+        vectorized template cross PS bandpower in type {freqency: X}
         
-    refs : list,tuple
-        frequency reference for template
-    
+	model : dict
+		foreground and background models in type {'model_name': model},
+		already prepared in pipeline.
+ 	
     """
-    def __init__(self, signal, noise, freqs, modes, template=None, refs=[30., 353.], sampling_opt=dict()):
-        """
-        
-        """
+    def __init__(self, signal, covariance, background, foreground):
         log.debug('@ tpfit::__init__')
-        # basic settings
-        self.freqs = freqs
-        self.modes = modes
         # measurements
         self.signal = signal
-        self.noise = noise
-        # reference frequencies
-        self.refs = refs
-        # adding template maps (for estimating template PS band power)
-        self.template = template
-        #
-        self._foreground = None
-        self._background = None
-        # sampling optinos
-        self.sampling_opt = sampling_opt
-        # init active parameter list
-        self.active_param_list = list()
-        # init active parameter range
-        self.active_param_range = dict()
-        
-    @property
-    def freqs(self):
-        return self._freqs
-        
-    @property
-    def modes(self):
-        return self._modes
+        self.covariance = covariance
+        # parameters
+        self.params = dict()
+        self.param_range = dict()
+        # models
+        self.background = background
+        self.foreground = foreground
         
     @property
     def signal(self):
         return self._signal
         
     @property
-    def noise(self):
-        return self._noise
-        
-    @property
-    def refs(self):
-        return self._refs
-        
-    @property
-    def template(self):
-        return self._template
-        
-    @property
-    def sampling_opt(self):
-        return self._sampling_opt
-        
-    @property
-    def active_param_list(self):
-        """active parameter name list"""
-        return self._active_param_list
-        
-    @property
-    def active_param_range(self):
-        """active parameter range"""
-        return self._active_param_range
-        
-    @freqs.setter
-    def freqs(self, freqs):
-        assert isinstance(freqs, (list,tuple))
-        self._freqs = freqs
-        self._nfreq = len(freqs)
-        log.debug('number of frequencies %s' % str(self._nfreq))
-        
-    @modes.setter
-    def modes(self, modes):
-        assert isinstance(modes, (list,tuple))
-        self._modes = modes
-        self._nmode = len(modes)
-        log.debug('angular modes %s' % str(self._modes))
-        
-    @refs.setter
-    def refs(self, refs):
-        assert isinstance(refs, (list,tuple))
-        self._refs = refs
-        self._nref = len(refs)
-        log.debug('reference frequencies %s' % str(self._refs))
-        
-    @signal.setter
-    def signal(self, signal):
-        assert isinstance(signal, np.ndarray)
-        assert (signal.shape[0] == self._nmode)  # number of angular modes
-        assert (signal.shape[1] == self._nfreq) # number of frequency bands
-        assert (signal.shape[1] == signal.shape[2])
-        self._signal = vecp(signal)  # vectorize signal matrix
-        log.debug('signal cross-PS read')
-        
-    @noise.setter
-    def noise(self, noise):
-        assert isinstance(noise, np.ndarray)
-        assert (noise.shape[0] == self._nmode)  # number of angular modes
-        assert (noise.shape[1] == self._nfreq) # number of frequency bands
-        assert (noise.shape[1] == noise.shape[2])
-        self._noise = vecp(noise)  # vectorize noise matrix
-        log.debug('cross-PS std read')
-        
-    @template.setter
-    def template(self, template):
-        assert isinstance(template, np.ndarray)
-        assert (template.shape[0] == self._nmode)  # number of angular modes
-        assert (template.shape[1] == self._nref) # number of frequency bands
-        self._template_flag = (template is not None)
-        self._template = template
-        log.debug('template cross-PS read')
-        
-    @sampling_opt.setter
-    def sampling_opt(self, opt):
-        assert isinstance(opt, dict)
-        self._sampling_opt = opt
-        
-    @active_param_list.setter
-    def active_param_list(self, active_param_list):
-        assert isinstance(active_param_list, (list,tuple))
-        self._active_param_list = active_param_list
-        
-    @active_param_range.setter
-    def active_param_range(self, active_param_range):
-        assert isinstance(active_param_range, dict)
-        self._active_param_range = active_param_range
-        
-    def __call__(self, kwargs=dict()):
-        log.debug('@ tpfit::__call__')
-        return self.run(kwargs)
-        
+    def covariance(self):
+        return self._covariance
+
     @property
     def foreground(self):
         return self._foreground
-        
-    @foreground.setter
-    def foreground(self, foreground_model):
-        assert isinstance(foreground_model, fgmodel)
-        self._foreground = foreground_model
-        
+
     @property
     def background(self):
         return self._background
         
+    @property
+    def params(self):
+        """active parameter name list"""
+        return self._params
+        
+    @property
+    def param_range(self):
+        """active parameter range"""
+        return self._param_range
+        
+    @signal.setter
+    def signal(self, signal):
+        assert isinstance(signal, np.ndarray)
+        assert (len(signal.shape) == 1)
+        self._signal = signal.copy()  # vectorized signal matrix
+        log.debug('cross-PS signal read')
+        
+    @covariance.setter
+    def covariance(self, covariance):
+        assert isinstance(covariance, np.ndarray)
+        assert (len(covariance.shape) == 2)
+        assert (covariance.shape[0] == covariance.shape[1])
+        assert (np.linalg.matrix_rank(covariance) == covariance.shape[0])
+        self._covariance = covariance.copy()  # vectorized cov matrix
+        log.debug('cross-PS cov read')
+        
+    @params.setter
+    def params(self, params):
+        assert isinstance(params, dict)
+        self._params = params
+        
+    @param_range.setter
+    def param_range(self, param_range):
+        assert isinstance(param_range, dict)
+        self._param_range = param_range
+        
+    @foreground.setter
+    def foreground(self, foreground):
+        assert isinstance(foreground, fgmodel)
+        self._foreground = foreground
+        # update from model
+        self._params.update(self._foreground.params)
+        self._param_range.update(self._foreground.param_range)
+        
     @background.setter
-    def background(self, background_model):
-        assert isinstance(background_model, bgmodel)
-        self._background = background_model
+    def background(self, background):
+        assert isinstance(background, bgmodel)
+        self._background = background
+        # update from model
+        self._params.update(self._background.params)
+        self._param_range.update(self._background.param_range)
+
+    def rerange(self, pdict):
+        assert isinstance(pdict, dict)
+        for name in pdict:
+            if (name in self._param_range.keys()):
+                assert isinstance(pdict[name], (list,tuple))
+                assert (len(pdict[name]) == 2)
+                self._param_range.update({name: pdict[name]})
+
+    def __call__(self, kwargs=dict()):
+        print ('\n template fitting kernel check list \n')
+        print ('# of parameters')
+        print (len(self.params))
+        print ('parameters')
+        print (self.params.keys())
+        print ('parameter range')
+        print (self.param_range)
+        print ('\n')
+        return self.run(kwargs)
         
     def run(self, kwargs=dict()):
-        # setup models and active param list
-        self._foreground = syncdustmodel(self._modes, refs=self._refs)
-        self._background = cmbmodel(self._modes)
-        if self._template_flag:
-            for i in range(self._nmode):
-                for j in range(len(self._refs)):
-                    self._foreground.reset({self._foreground.param_list[i+j*self._nmode] : self._template[i,j]})
-            self._active_param_list = ['beta_s','beta_d','rho']+self._background.param_list
-        else:
-            self._active_param_list = self._fogreground.param_list + self._background.param_list
-        # priors and ranges
-        for name in self._active_param_list:
-            if name in self._foreground.param_list:
-                self._active_param_range[name] = self._foreground.param_range[name]
-            elif name in self._background.param_list:
-                self._active_param_range[name] = self._background.param_range[name]
-        #
-        self.info
-        # start sampler
+        sampler = dynesty.NestedSampler(self._core_likelihood,self.prior,len(self._params),**kwargs)
+        sampler.run_nested()
+        return sampler.results 
+        """
         results = pymultinest.solve(LogLikelihood=self._core_likelihood,
                                     Prior=self.prior,
-                                    n_dims=len(self.active_param_list),
-                                    **self.sampling_opt)
-        return results
+                                    n_dims=len(self._params),
+                                    **kwargs)
+        """
         
     def _core_likelihood(self, cube):
         """
@@ -221,35 +161,37 @@ class tpfit(object):
             log.debug('cube %s requested. returned most negative possible number' % str(cube))
             return np.nan_to_num(-np.inf)
         variable = cube[:]
-        # map variable to parameters
-        parameter = dict()
-        for i in range(len(self._active_param_list)):
-            _name = self._active_param_list[i]
-            parameter[_name] = self.unity_mapper(variable[i], self._active_param_range[_name])
-        #print ('variable', variable)
-        #print ('name list', self._active_param_list)
-        #print ('parameter', parameter)
+        # map variable to model parameters
+        name_list = list(self._params.keys())
+        for i in range(len(name_list)):
+            name = name_list[i]
+            tmp = self.unity_mapper(variable[i], self._param_range[name])
+            self._foreground.reset({name: tmp})
+            self._background.reset({name: tmp})
         # predict signal
-        for name in self._active_param_list:
-            self._foreground.reset({name : parameter[name]})
-            self._background.reset({name : parameter[name]})
-        #print ('foreground reset', self._foreground.params)
-        #print ('background reset', self._background.params)
-        #import os
-        #os.exit(1)
-        bp = vecp(self._foreground.bandpower(self._freqs) + self._background.bandpower(self._freqs))
-        return self.loglikeli(bp)
+        log.debug('@ tpfit_pipeline::foreground reset', self._foreground.params)
+        log.debug('@ tpfit_pipeline::background reset', self._background.params)
+        return self.loglikeli(vec_simple(self._foreground.bandpower() + self._background.bandpower()))
         
     def loglikeli(self, predicted):
-        """log-likelihood calculator"""
+        """log-likelihood calculator
+
+        Parameters
+        ----------
+
+        predicted : numpy.ndarray
+            vectorized bandpower from models
+        """
         assert (predicted.shape == self._signal.shape)
-        return -0.5*np.sum(np.log((self._signal - predicted)**2/self._noise**2))
+        diff = self._signal - predicted
+        #(sign, logdet) = np.linalg.slogdet(cov*2.*np.pi)
+        return -0.5*(np.vdot(diff, np.linalg.solve(self._covariance, diff.T))) #+sign*logdet)
         
     def prior(self, cube):
         """flat prior"""
         return cube
         
-    def unity_mapper(self, x, range=[0.,1.]):
+    def unity_mapper(self, x, r=[0.,1.]):
         """
         Maps x from [0, 1] into the interval [a, b]
 
@@ -266,26 +208,6 @@ class tpfit(object):
             The mapped parameter value
         """
         log.debug('@ tpfit::unity_mapper')
-        assert isinstance(range, (list,tuple))
-        assert (len(range) == 2)
-        return np.float64(x) * (np.float64(range[1])-np.float64(range[0])) + np.float64(range[0])
-    
-    @property
-    def info(self):
-        print ('sampling check list')
-        print ('measurement frequency bands')
-        print (self._freqs)
-        print ('# of frequency bands')
-        print (self._nfreq)
-        print ('with template?')
-        print (self._template_flag)
-        print ('template reference frequency bands')
-        print (self._refs)
-        print ('angular modes')
-        print (self._modes)
-        print ('# of modes')
-        print (self._nmode)
-        print ('active parameter list')
-        print (self._active_param_list)
-        print ('active parameter range')
-        print (self._active_param_range)
+        assert isinstance(r, (list,tuple))
+        assert (len(r) == 2)
+        return x * (r[1]-r[0]) + r[0]

@@ -4,7 +4,6 @@ import healpy as hp
 from copy import deepcopy
 from abspy.methods.abs import abssep
 from abspy.tools.ps_estimator import pstimator
-from abspy.tools.aux import vecp, hl_g
 from abspy.tools.icy_decorator import icy
 
 
@@ -17,7 +16,7 @@ class abspipe(object):
     - Jian Yao (STJU)
     - Jiaxin Wang (SJTU) jiaxin.wang@sjtu.edu.cn
     """
-    def __init__(self, signals, nfreq, nmap, nside, variances=None, mask=None, lmax=None, fwhms=None):
+    def __init__(self, signals, variances=None, mask=None, lmax=None, fwhms=None):
         """
         The ABS pipeline for extracting CMB power-spectrum band power,
         according to given measured sky maps at various frequency bands.
@@ -25,50 +24,33 @@ class abspipe(object):
         Parameters
         ----------
     
-        signals : numpy.ndarray
+        signals : dict
             Measured signal maps,
-            should be arranged in shape: (frequency #, map #, pixel #).
+            should be arranged in form: {frequency (GHz) : array(map #, pixel #)}.
         
-        variances : numpy.ndarray
+        variances : dict
             Measured noise variance maps,
-            should be arranged in shape: (frequency #, map #, pixel #).
+            should be arranged in form: {frequency (GHz): array(map #, pixel #)}.
             By default, no variance maps required.
         
         mask : numpy.ndarray
             Single mask map,
             should be arranged in shape: (1, pixel #).
     
-        nfreq : integer
-            Number of frequencies.
-        
-        nmap : integer
-            Number of maps,
-            if 1, taken as T maps only,
-            if 2, taken as Q,U maps only,
-        
-        nside : integer
-            HEALPix Nside of inputs.
-            
-        nsamp : integer
-            Noise resampling size (hidden parameter, by default is 100).
-            
         lmax : integer
             Maximal multiple.
             
         fwhms : list, tuple
-            FWHM of gaussian beams for each frequency
+            FWHM (in rad) of gaussian beams for each frequency
         """
         log.debug('@ abspipe::__init__')
-        #
-        self.nfreq = nfreq
-        self.nmap = nmap
-        self.nside = nside
-        self.lmax = lmax
-        self.fwhms = fwhms
         #
         self.signals = signals
         self.variances = variances
         self.mask = mask
+        #
+        self.lmax = lmax
+        self.fwhms = fwhms
         # method select dict with keys defined by (self._noise_flag, self._nmap)
         self._methodict = {(True,1): self.method_noisyT,
                            (True,2): self.method_noisyEB,
@@ -90,7 +72,7 @@ class abspipe(object):
     @property
     def mask(self):
         return self._mask
-        
+
     @property
     def nfreq(self):
         return self._nfreq
@@ -119,28 +101,6 @@ class abspipe(object):
     def fwhms(self):
         return self._fwhms
     
-    @nfreq.setter
-    def nfreq(self, nfreq):
-        assert isinstance(nfreq, int)
-        assert (nfreq > 0)
-        self._nfreq = nfreq
-        log.debug('number of frequencies: %s' % str(self._nfreq))
-        
-    @nmap.setter
-    def nmap(self, nmap):
-        assert isinstance(nmap, int)
-        assert (nmap > 0)
-        self._nmap = nmap
-        log.debug('number of maps: %s' % str(self._nmap))
-        
-    @nside.setter
-    def nside(self, nside):
-        assert isinstance(nside, int)
-        assert (nside > 0)
-        self._nside = nside
-        self._npix = 12*nside**2
-        log.debug('HEALPix Nside: %s' % str(self._nside))
-        
     @lmax.setter
     def lmax(self, lmax):
         if lmax is None:
@@ -152,18 +112,28 @@ class abspipe(object):
         
     @signals.setter
     def signals(self, signals):
-        assert isinstance(signals, np.ndarray)
-        assert (signals.shape == (self._nfreq,self._nmap,self._npix))
-        self._signals = signals.copy()
+        """detect and register nfreq, nmap, npix and nside automatically
+        """
+        assert isinstance(signals, dict)
+        self._nfreq = len(signals)
+        log.debug('number of frequencies: %s' % str(self._nfreq))
+        assert (len(signals[next(iter(signals))].shape) == 2)
+        self._nmap = signals[next(iter(signals))].shape[0]
+        log.debug('number of maps: %s' % str(self._nmap))
+        self._npix = signals[next(iter(signals))].shape[1]
+        self._nside = int(np.sqrt(self._npix//12))
+        log.debug('HEALPix Nside: %s' % str(self._nside))
+        self._signals = np.r_[[signals[x] for x in sorted(signals.keys())]]
         log.debug('signal maps loaded')
         
     @variances.setter
     def variances(self, variances):
         if variances is not None:
-            assert isinstance(variances, np.ndarray)
-            assert (variances.shape == (self._nfreq,self._nmap,self._npix))
+            assert isinstance(variances, dict)
+            assert (variances[next(iter(variances))].shape[0] == self._nmap)
+            assert (variances[next(iter(variances))].shape[1] == self._npix)
             self._noise_flag = True
-            self._variances = variances.copy()
+            self._variances = np.r_[[variances[x] for x in sorted(variances.keys())]]
         else:
             self._noise_flag = False
             self._variances = None
@@ -172,17 +142,16 @@ class abspipe(object):
     @mask.setter
     def mask(self, mask):
         if mask is None:
-            self._mask = np.ones((1,self._npix),dtype=bool)
+            self._mask = np.ones((1,self._npix),dtype=np.float32)
         else:
             assert isinstance(mask, np.ndarray)
             assert (mask.shape == (1,self._npix))
             self._mask = mask.copy()
         # clean up input maps with mask
-        mflag = self._mask[0] < 1.
-        self._mask[:,mflag] = 0.
-        self._signals[:,:,mflag] = 0.
+        self._mask[:,self._mask[0]<1.] = 0.
+        self._signals[:,:,self._mask[0]<1.] = 0.
         if self._variances is not None:
-            self._variances[:,:,mflag] = 0.
+            self._variances[:,:,self._mask[0]<1.] = 0.
         log.debug('mask map loaded')
         
     @nsamp.setter
@@ -295,11 +264,10 @@ class abspipe(object):
         est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run trial PS estimations for workspace template
         wsp_dict = dict()
-        modes = None
+        modes = est.modes
         for i in range(self._nfreq):
             tmp = est.auto_t(self._signals[0],fwhms=self._fwhms[i])
             wsp_dict[(i,i)] = tmp[-1]  # register workspace
-            modes = tmp[0]  # register angular modes
             for j in range(i+1,self._nfreq):
                 tmp = est.cross_t(self._signals[:2,0],fwhms=[self._fwhms[i],self._fwhms[j]])
                 wsp_dict[(i,j)] = tmp[-1]  # register workspace
@@ -410,11 +378,10 @@ class abspipe(object):
         est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run trial PS estimations for workspace template
         wsp_dict = dict()
-        modes = None
+        modes = est.modes
         for i in range(self._nfreq):
             tmp = est.auto_eb(self._signals[0],fwhms=self._fwhms[i])
             wsp_dict[(i,i)] = tmp[-1]  # register workspace
-            modes = tmp[0]  # register angular modes
             for j in range(i+1,self._nfreq):
                 tmp = est.cross_eb(self._signals[:2].reshape(4,-1),fwhms=[self._fwhms[i],self._fwhms[j]])
                 wsp_dict[(i,j)] = tmp[-1]  # register workspace
@@ -547,11 +514,10 @@ class abspipe(object):
         est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run trial PS estimations for workspace template
         wsp_dict = dict()
-        modes = None
+        modes = est.modes
         for i in range(self._nfreq):
             tmp = est.auto_t(self._signals[0,0].reshape(1,-1),fwhms=self._fwhms[i])
             wsp_dict[(i,i)] = tmp[-1]  # register workspace
-            modes = tmp[0]  # register angular modes
             for j in range(i+1,self._nfreq):
                 tmp = est.cross_t(self._signals[:2,0],fwhms=[self._fwhms[i],self._fwhms[j]])
                 wsp_dict[(i,j)] = tmp[-1]  # register workspace
