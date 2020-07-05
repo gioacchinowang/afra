@@ -3,7 +3,7 @@ import numpy as np
 from abspy.tools.fg_models import syncdustmodel
 from abspy.tools.bg_models import cmbmodel
 from abspy.tools.ps_estimator import pstimator
-from abspy.tools.aux import vec_simple, oas_cov
+from abspy.tools.aux import vec_simple, oas_cov, g_simple
 from abspy.tools.icy_decorator import icy
 from abspy.methods.tpfit import tpfit_simple
 
@@ -324,11 +324,16 @@ class tpfpipe(object):
         else:
             raise ValueError('unsupported likelihood type')
 
+    def preprocess_hl(self,aposcale,psbin,nsamp):
+        pass 
+
     def preprocess_simple(self,aposcale,psbin,nsamp):
         """estimate measurements band power (vectorized) and its corresponding covariance matrix.
+        
+        Note that the 1st multipole bin is ignored.
         """
         est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin)  # init PS estimator
-        modes = est.modes  # angular modes
+        modes = est.modes[1:]  # angular modes
         if (self._nmap == 1):
             ps_t = np.zeros((nsamp,len(modes),self._nfreq,self._nfreq),dtype=np.float32)
             for s in range(nsamp):
@@ -339,16 +344,16 @@ class tpfpipe(object):
                     stmp = est.auto_t(self._signals[i]+ntmp,fwhms=self._fwhms[i])
                     # assign results
                     for k in range(len(modes)):
-                        ps_t[s,k,i,i] = stmp[1][k]
+                        ps_t[s,k,i,i] = stmp[1][k+1]
                     # cross correlation
                     for j in range(i+1,self._nfreq):
                         # cross correlation
                         ntmp = np.random.normal(size=(self._nmap*2,self._npix))*np.sqrt(np.r_[self._variances[i],self._variances[j]])
                         stmp = est.cross_t(np.r_[self._signals[i],self._signals[j]]+ntmp,fwhms=[self._fwhms[i],self._fwhms[j]])
                         for k in range(len(modes)):
-                            ps_t[s,k,i,j] = stmp[1][k]
+                            ps_t[s,k,i,j] = stmp[1][k+1]
             xl_set = vec_simple(ps_t)
-            return (np.mean(xl_set,axis=0), oas_cov(xl_set))
+            return ( np.mean(xl_set,axis=0), oas_cov(xl_set) )
         elif (self._nmap == 2):
             # allocate
             ps_b = np.zeros((nsamp,len(modes),self._nfreq,self._nfreq),dtype=np.float32)
@@ -360,16 +365,15 @@ class tpfpipe(object):
                     stmp = est.auto_eb(self._signals[i]+ntmp,fwhms=self._fwhms[i])
                     # assign results
                     for k in range(len(modes)):
-                        ps_b[s,k,i,i] = stmp[2][k]
+                        ps_b[s,k,i,i] = stmp[2][k+1]
                     # cross correlation
                     for j in range(i+1,self._nfreq):
                         # cross correlation
                         ntmp = np.random.normal(size=(self._nmap*2,self._npix))*np.sqrt(np.r_[self._variances[i],self._variances[j]])
                         stmp = est.cross_eb(np.r_[self._signals[i],self._signals[j]]+ntmp,fwhms=[self._fwhms[i],self._fwhms[j]])
                         for k in range(len(modes)):
-                            ps_b[s,k,i,j] = stmp[2][k]
-            # for B mode we ignore the first bin
-            xl_set = vec_simple(ps_b[:,1:,:,:])
-            return (np.mean(xl_set,axis=0), oas_cov(xl_set)) 
+                            ps_b[s,k,i,j] = stmp[2][k+1]
+            xl_set = vec_simple(ps_b)
+            return ( np.mean(xl_set,axis=0), oas_cov(xl_set) )
         else:
             raise ValueError('unsupported nmap')

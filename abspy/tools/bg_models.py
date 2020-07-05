@@ -21,7 +21,7 @@ class bgmodel(object):
         self.aposcale = aposcale
         self.psbin = psbin
         self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin)  # init PS estimator
-        self._modes = self._est.modes[int(self._nmap==2):]  # adjust for B mode
+        self._modes = self._est.modes[1:]  # discard 1st multipole bin
         self._params = dict()  # base class holds empty dict
         self._params_dft = dict()
 
@@ -179,4 +179,75 @@ class cmbmodel(bgmodel):
             bp_b = np.ones((len(self._modes),self._nfreq,self._nfreq))
             for l in range(len(self._modes)):
                 bp_b[l] *= self._params['bp_c_B_'+str(self._modes[l])]
+            return bp_b
+
+
+@icy
+class cambmodel(bgmodel):
+    """cmb model by camb"""
+
+    def __init__(self, freqs, nmap, mask, aposcale, psbin):
+        super(cmbmodel, self).__init__(freqs,nmap,mask,aposcale,psbin)
+        # setup self.params' keys by param_list and content by param_dft
+        self.reset(self.default)
+
+    @property
+    def param_list(self):
+        """parameters are set as
+        - "r", tensor-to-scalar ratio
+        """
+        return ['r']
+
+    @property
+    def default(self):
+        """register default parameter values
+        """
+        return {'r': 0.05}
+
+    def apply_bpwin(self, cmb_cl):
+        """calculate binned CMB band-power from input Cl
+        according to NaMaster binning strategy.
+        """
+        cmb_dl = np.zeros(len(self._modes))
+        for i in range(len(self._modes)):
+            lrange = np.array(self._est._b.get_ell_list(i+1))
+            factor = 0.5*lrange*(lrange+1)/np.pi
+            w = np.array(self._est._b.get_weight_list(i+1))
+            cmb_dl[i] = np.sum(w*cmb_cl[lrange]*factor)
+        return cmb_dl
+
+    def bandpower(self):
+        """synchrotron model cross-(frequency)-power-spectrum
+        in shape (ell #, freq #, freq #)
+
+        Parameters
+        ----------
+
+        freq_list : float
+            list of frequency in GHz
+
+        freq_ref : float
+            synchrotron template reference frequency
+        """
+        import camb
+        from camb import model, initialpower
+        pars = camb.CAMBparams()
+        pars.set_cosmology(H0=67.5,ombh2=0.022,omch2=0.122,mnu=0.06,omk=0,tau=0.06)
+        pars.InitPower.set_params(As=2e-9,ns=0.965,r=self._params['r'])
+        # lmax = 2*nside takes tools/ps_estimator default setting
+        pars.set_for_lmax(2.*self._nside,lens_potential_accuracy=1);
+        pars.WantTensors = True
+        results = camb.get_results(pars)
+        powers = results.get_cmb_power_spectra(pars, CMB_unit='muK')
+        if self._nmap == 1:
+            bp_t = np.ones((len(self._modes),self._nfreq,self._nfreq))
+            fiducial_cl = self.apply_bpwin(powers['total'][:,0])
+            for l in range(len(self._modes)):
+                bp_t[l] *= fiducial_cl[l] 
+            return bp_t
+        if self._nmap == 2:
+            bp_b = np.ones((len(self._modes),self._nfreq,self._nfreq))
+            fiducial_cl = self.apply_bpwin(powers['total'][:,2])
+            for l in range(len(self._modes)):
+                bp_b[l] *= fiducial_cl[l]
             return bp_b

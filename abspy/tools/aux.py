@@ -114,8 +114,8 @@ def binaps(aps, modes, bins):
         effl = 0.5*(modes[begin]+modes[end-1])
         result[i,:] = np.mean(aps_cp[begin:end,:], axis=0)*0.5*effl*(effl+1)/np.pi
     return result
-    
-    
+   
+
 def oas_cov(sample):
     """
     OAS covariance estimator.
@@ -193,7 +193,6 @@ def vec_simple(cps):
         raise ValueError('unsupported input shape')
 
 
-def hl_g(x):
-    """HL likelihood g(x) function"""
-    assert (x > 0.)
-    return np.sign(x-1.)*np.sqrt(2.*(x-np.log(x)-1.))
+def g_simple(x):
+    """simple likelihood g(x) function"""
+    return np.sqrt(2.*np.nan_to_num(x-np.log(x)-1.))

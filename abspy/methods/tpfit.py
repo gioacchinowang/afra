@@ -1,7 +1,7 @@
 import logging as log
 import numpy as np
 from abspy.tools.icy_decorator import icy
-from abspy.tools.aux import vec_simple
+from abspy.tools.aux import vec_simple, g_simple
 from abspy.tools.fg_models import *
 from abspy.tools.bg_models import *
 
@@ -183,7 +183,7 @@ class tpfit_simple(object):
             vectorized bandpower from models
         """
         assert (predicted.shape == self._signal.shape)
-        diff = self._signal - predicted
+        diff = predicted - self._signal
         #(sign, logdet) = np.linalg.slogdet(cov*2.*np.pi)
         return -0.5*(np.vdot(diff, np.linalg.solve(self._covariance, diff.T))) #+sign*logdet)
         

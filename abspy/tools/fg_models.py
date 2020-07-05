@@ -30,7 +30,7 @@ class fgmodel(object):
         self.templates = templates
         self.template_fwhms = template_fwhms
         self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin)  # init PS estimator
-        self._modes = self._est.modes[int(self._nmap==2):]  # adjust for B mode
+        self._modes = self._est.modes[1:]  # discard 1st multipole bin
         self._params = dict()  # base class holds empty dict
         self._params_dft = dict()
         self._template_ps = dict()
@@ -187,7 +187,7 @@ class syncmodel(fgmodel):
         if self._template_flag:
             for ref in self._template_freqs:
                 if (self._nmap == 1):
-                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1]
+                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][1:]
                 elif (self._nmap == 2):
                     self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][1:]
         else:
@@ -285,7 +285,7 @@ class dustmodel(fgmodel):
         if self._template_flag:
             for ref in self._template_freqs:
                 if (self._nmap == 1):
-                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1]
+                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][1:]
                 elif (self._nmap == 2):
                     self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][1:]
         else:
@@ -387,7 +387,7 @@ class syncdustmodel(fgmodel):
         if self._template_flag:
             for ref in self._template_freqs:
                 if (self._nmap == 1):
-                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1]
+                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][1:]
                 elif (self._nmap == 2):
                     self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][1:]
         else:
