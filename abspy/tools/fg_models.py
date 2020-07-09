@@ -174,6 +174,13 @@ class fgmodel(object):
             if name in self.param_list:
                 self._params.update({name: pdict[name]})
 
+    def i2cmb(self,freq,ref):
+            """Brightness flux to CMB temperature unit converting ratio"""
+            hGk_t0 = 0.04799340833334541/2.73  # h*GHz/k_B/T0
+            p = hGk_t0*freq
+            p0 = hGk_t0*ref
+            return (ref/freq)**4*np.exp(p0-p)*(np.exp(p)-1.)**2/(np.exp(p0)-1.)**2
+
 
 @icy
 class syncmodel(fgmodel):
@@ -251,26 +258,18 @@ class syncmodel(fgmodel):
         ref = self._template_freqs[0]
         # estimate bandpower from templates
         ps_s = self._template_ps[ref]
-        if (self._nmap == 1):
-            dl_t = np.zeros((len(self._modes),self._nfreq,self._nfreq))
-            for l in range(len(self._modes)):
-                bp_s = ps_s[l]
-                for i in range(self._nfreq):
-                    dl_t[l,i,i] = bp_s * (self._freqs[i]*self._freqs[i]/ref**2)**beta_val_s
-                    for j in range(i+1,self._nfreq):
-                        dl_t[l,i,j] = bp_s * (self._freqs[i]*self._freqs[j]/ref**2)**beta_val_s
-            return dl_t
-        elif (self._nmap == 2):
-            dl_b = np.zeros((len(self._modes),self._nfreq,self._nfreq))
-            for l in range(len(self._modes)):
-                bp_s = ps_s[l]
-                for i in range(self._nfreq):
-                    scale = (self._freqs[i]*self._freqs[i]/ref**2)**beta_val_s
-                    dl_b[l,i,i] = bp_s * scale
-                    for j in range(i+1,self._nfreq):
-                        scale = (self._freqs[i]*self._freqs[j]/ref**2)**beta_val_s
-                        dl_b[l,i,j] = bp_s * scale
-            return dl_b
+        dl = np.zeros((len(self._modes),self._nfreq,self._nfreq))
+        for l in range(len(self._modes)):
+            bp_s = ps_s[l]
+            for i in range(self._nfreq):
+                f_ratio_i = (self._freqs[i]/ref)**beta_val_s
+                c_ratio_i = self.i2cmb(self._freqs[i],ref)
+                dl[l,i,i] = bp_s * (f_ratio_i*c_ratio_i)**2
+                for j in range(i+1,self._nfreq):
+                    f_ratio_j = (self._freqs[j]/ref)**beta_val_s
+                    c_ratio_j = self.i2cmb(self._freqs[j],ref)
+                    dl[l,i,j] = bp_s * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+        return dl
 
 
 @icy
@@ -335,6 +334,10 @@ class dustmodel(fgmodel):
             pdft[key] = 0.5*(prange[key][0] + prange[key][1])
         return pdft
 
+    def bratio(self,freq,ref):
+        hGk_td = 0.04799340833334541/19.6  # h*GHz/k_B/Td
+        return (freq/ref)**3*(np.exp(hGk_td*ref)-1.)/(np.exp(hGk_td*freq)-1.)
+
     def bandpower(self):
         """dust model cross-(frequency)-power-spectrum
         in shape (ell #, freq #, freq #)
@@ -348,31 +351,19 @@ class dustmodel(fgmodel):
         beta_val_d = self.params['beta_d']
         ref = self._template_freqs[0]
         ps_d = self._template_ps[ref]
-        def Bratio(_freq):
-            _td = 19.6  # thermal dust temp
-            _hGk = 0.04799340833334541  # h*GHz/k_B
-            return (np.exp(_hGk*ref/_td)-1.)/(np.exp(_hGk*_freq/_td)-1.)
         # estimate bandpower from templates
-        if (self._nmap == 1):
-            dl_t = np.zeros((len(self._modes),self._nfreq,self._nfreq))
-            for l in range(len(self._modes)):
-                bp_d = ps_d[l]
-                for i in range(self._nfreq):
-                    dl_t[l,i,i] = bp_d * (self._freqs[i]*self._freqs[i]/ref**2)**(beta_val_d+1)* Bratio(self._freqs[i])**2
-                    for j in range(i+1,self._nfreq):
-                        dl_t[l,i,j] = bp_d * (self._freqs[i]*self._freqs[j]/ref**2)**(beta_val_d+1)*Bratio(self._freqs[i])*Bratio(self._freqs[j])
-            return dl_t
-        elif (self._nmap == 2):
-            dl_b = np.zeros((len(self._modes),self._nfreq,self._nfreq))
-            for l in range(len(self._modes)):
-                bp_d = ps_d[l]
-                for i in range(self._nfreq):
-                    scale = (self._freqs[i]*self._freqs[i]/ref**2)**(beta_val_d+1)* Bratio(self._freqs[i])**2
-                    dl_b[l,i,i] = bp_d * scale
-                    for j in range(i+1,self._nfreq):
-                        scale = (self._freqs[i]*self._freqs[j]/ref**2)**(beta_val_d+1)*Bratio(self._freqs[i])*Bratio(self._freqs[j])
-                        dl_b[l,i,j] = bp_d * scale
-            return dl_b
+        dl = np.zeros((len(self._modes),self._nfreq,self._nfreq))
+        for l in range(len(self._modes)):
+            bp_d = ps_d[l]
+            for i in range(self._nfreq):
+                f_ratio_i = (self._freqs[i]/ref)**beta_val_d*self.bratio(self._freqs[i],ref)
+                c_ratio_i = self.i2cmb(self._freqs[i],ref)
+                dl[l,i,i] = bp_d * (f_ratio_i*c_ratio_i)**2
+                for j in range(i+1,self._nfreq):
+                    f_ratio_j = (self._freqs[j]/ref)**beta_val_d*self.bratio(self._freqs[j],ref)
+                    c_ratio_j = self.i2cmb(self._freqs[j],ref)
+                    dl[l,i,j] = bp_d * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+        return dl
 
 
 @icy
@@ -441,6 +432,10 @@ class syncdustmodel(fgmodel):
             pdft[key] = 0.5*(prange[key][0] + prange[key][1])
         return pdft
 
+    def bratio(self,freq,ref):
+        hGk_td = 0.04799340833334541/19.6  # h*GHz/k_B/Td
+        return (freq/ref)**3*(np.exp(hGk_td*ref)-1.)/(np.exp(hGk_td*freq)-1.)
+
     def bandpower(self):
         """synchrotron model cross-(frequency)-power-spectrum
         in shape (ell #, freq #, freq #)
@@ -457,38 +452,25 @@ class syncdustmodel(fgmodel):
         ref = self._template_freqs
         ps_s = self._template_ps[ref[0]]
         ps_d = self._template_ps[ref[1]]
-        def Bratio(_freq):
-            _td = 19.6  # thermal dust temp
-            _hGk = 0.04799340833334541  # h*GHz/k_B
-            return (np.exp(_hGk*ref[1]/_td)-1.)/(np.exp(_hGk*_freq/_td)-1.)
         # estimate bandpower from templates
-        if (self._nmap == 1):
-            dl_t = np.zeros((len(self._modes),self._nfreq,self._nfreq))
-            for l in range(len(self._modes)):
-                bp_s = ps_s[l]
-                bp_d = ps_d[l]
-                for i in range(self._nfreq):
-                    dl_t[l,i,i] = bp_s * (self._freqs[i]*self._freqs[i]/ref[0]**2)**beta_val_s
-                    dl_t[l,i,i] += bp_d * (self._freqs[i]*self._freqs[i]/ref[1]**2)**(beta_val_d+1)* Bratio(self._freqs[i])**2
-                    dl_t[l,i,i] += rho * np.sqrt(bp_s*bp_d)*(2.*(self._freqs[i]/ref[0])**beta_val_s*(self._freqs[i]/ref[1])**(beta_val_d+1)*Bratio(self._freqs[i]))
-                    for j in range(i+1,self._nfreq):
-                        dl_t[l,i,j] = bp_s * (self._freqs[i]*self._freqs[j]/ref[0]**2)**beta_val_s
-                        dl_t[l,i,j] += bp_d * (self._freqs[i]*self._freqs[j]/ref[1]**2)**(beta_val_d+1)*Bratio(self._freqs[i])*Bratio(self._freqs[j])
-                        dl_t[l,i,j] += rho * np.sqrt(bp_s*bp_d)*((self._freqs[i]/ref[0])**beta_val_s*(self._freqs[j]/ref[1])**(beta_val_d+1)*Bratio(self._freqs[j]) + (self._freqs[j]/ref[0])**beta_val_s*(self._freqs[i]/ref[1])**(beta_val_d+1)*Bratio(self._freqs[i]))
-            return dl_t
-        elif (self._nmap == 2):
-            dl_b = np.zeros((len(self._modes),self._nfreq,self._nfreq))
-            for l in range(len(self._modes)):
-                bp_s = ps_s[l]
-                bp_d = ps_d[l]
-                for i in range(self._nfreq):
-                    scale_s = (self._freqs[i]*self._freqs[i]/ref[0]**2)**beta_val_s
-                    scale_d = (self._freqs[i]*self._freqs[i]/ref[1]**2)**(beta_val_d+1)* Bratio(self._freqs[i])**2
-                    scale_x = (2.*(self._freqs[i]/ref[0])**beta_val_s*(self._freqs[i]/ref[1])**(beta_val_d+1)*Bratio(self._freqs[i]))
-                    dl_b[l,i,i] = bp_s*scale_s + bp_d*scale_d + rho*np.sqrt(bp_s*bp_d)*scale_x
-                    for j in range(i+1,self._nfreq):
-                        scale_s = (self._freqs[i]*self._freqs[j]/ref[0]**2)**beta_val_s
-                        scale_d = (self._freqs[i]*self._freqs[j]/ref[1]**2)**(beta_val_d+1)*Bratio(self._freqs[i])*Bratio(self._freqs[j])
-                        scale_x = ((self._freqs[i]/ref[0])**beta_val_s*(self._freqs[j]/ref[1])**(beta_val_d+1)*Bratio(self._freqs[j]) + (self._freqs[j]/ref[0])**beta_val_s*(self._freqs[i]/ref[1])**(beta_val_d+1)*Bratio(self._freqs[i]))
-                        dl_b[l,i,j] = bp_s*scale_s + bp_d*scale_d + rho*np.sqrt(bp_s*bp_d)*scale_x
-            return dl_b
+        dl = np.zeros((len(self._modes),self._nfreq,self._nfreq))
+        for l in range(len(self._modes)):
+            bp_s = ps_s[l]
+            bp_d = ps_d[l]
+            for i in range(self._nfreq):
+                f_ratio_is = (self._freqs[i]/ref[0])**beta_val_s
+                f_ratio_id = (self._freqs[i]/ref[1])**beta_val_d*self.bratio(self._freqs[i],ref[1])
+                c_ratio_is = self.i2cmb(self._freqs[i],ref[0])
+                c_ratio_id = self.i2cmb(self._freqs[i],ref[1])
+                dl[l,i,i] = bp_s * (f_ratio_is*c_ratio_is)**2
+                dl[l,i,i] += bp_d * (f_ratio_id*c_ratio_id)**2
+                dl[l,i,i] += rho * np.sqrt(bp_s*bp_d) * (f_ratio_is*f_ratio_id*c_ratio_is*c_ratio_id)
+                for j in range(i+1,self._nfreq):
+                    f_ratio_js = (self._freqs[j]/ref[0])**beta_val_s
+                    f_ratio_jd = (self._freqs[j]/ref[1])**beta_val_d*self.bratio(self._freqs[j],ref[1])
+                    c_ratio_js = self.i2cmb(self._freqs[j],ref[0])
+                    c_ratio_jd = self.i2cmb(self._freqs[j],ref[1])
+                    dl[l,i,j] = bp_s * (f_ratio_is*c_ratio_is*f_ratio_js*c_ratio_js)
+                    dl[l,i,j] += bp_d * (f_ratio_id*c_ratio_id*f_ratio_jd*c_ratio_jd)
+                    dl[l,i,j] += rho * np.sqrt(bp_s*bp_d) * ( f_ratio_is*c_ratio_is*f_ratio_jd*c_ratio_jd + f_ratio_id*c_ratio_id*f_ratio_js*c_ratio_js  )
+        return dl

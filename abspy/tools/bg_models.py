@@ -9,6 +9,7 @@ import logging as log
 import numpy as np
 from abspy.tools.icy_decorator import icy
 from abspy.tools.ps_estimator import pstimator
+from abspy.tools.aux import bp_window
 
 
 @icy
@@ -204,18 +205,6 @@ class cambmodel(bgmodel):
         """
         return {'r': 0.05}
 
-    def apply_bpwin(self, cmb_cl):
-        """calculate binned CMB band-power from input Cl
-        according to NaMaster binning strategy.
-        """
-        cmb_dl = np.zeros(len(self._modes))
-        for i in range(len(self._modes)):
-            lrange = np.array(self._est._b.get_ell_list(i+1))
-            factor = 0.5*lrange*(lrange+1)/np.pi
-            w = np.array(self._est._b.get_weight_list(i+1))
-            cmb_dl[i] = np.sum(w*cmb_cl[lrange]*factor)
-        return cmb_dl
-
     def bandpower(self):
         """synchrotron model cross-(frequency)-power-spectrum
         in shape (ell #, freq #, freq #)
@@ -239,15 +228,12 @@ class cambmodel(bgmodel):
         pars.WantTensors = True
         results = camb.get_results(pars)
         powers = results.get_cmb_power_spectra(pars, CMB_unit='muK')
+        bp_out = np.ones((len(self._modes),self._nfreq,self._nfreq))
         if self._nmap == 1:
-            bp_t = np.ones((len(self._modes),self._nfreq,self._nfreq))
             fiducial_cl = self.apply_bpwin(powers['total'][:,0])
-            for l in range(len(self._modes)):
-                bp_t[l] *= fiducial_cl[l] 
-            return bp_t
         if self._nmap == 2:
-            bp_b = np.ones((len(self._modes),self._nfreq,self._nfreq))
             fiducial_cl = self.apply_bpwin(powers['total'][:,2])
-            for l in range(len(self._modes)):
-                bp_b[l] *= fiducial_cl[l]
-            return bp_b
+        fiducial_bp = bp_window(self._est,len(fiducial_cl)).dot(fiducial_cl) 
+        for l in range(len(self._modes)):
+            bp_out[l] *= fiducial_bp[l]
+        return bp_out

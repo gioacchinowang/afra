@@ -3,7 +3,7 @@ import numpy as np
 from abspy.tools.fg_models import syncdustmodel
 from abspy.tools.bg_models import cmbmodel
 from abspy.tools.ps_estimator import pstimator
-from abspy.tools.aux import vec_simple, oas_cov, g_simple
+from abspy.tools.aux import vec_simple, oas_cov, g_simple, bp_window
 from abspy.tools.icy_decorator import icy
 from abspy.methods.tpfit import tpfit_simple
 
@@ -254,6 +254,13 @@ class tpfpipe(object):
     def likelihood(self, likelihood):
         assert isinstance(likelihood, str)
         self._likelihood = likelihood
+
+    def bp_window(self,aposcale,psbin,lmax=None):
+        """window function matrix for converting global PS into band-powers"""
+        if lmax is None:
+            lmax = 3*self._nside
+        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin)
+        return bp_window(est,lmax)
         
     def __call__(self,aposcale,psbin,nsamp,kwargs=dict()):
         """

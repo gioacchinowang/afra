@@ -1,5 +1,6 @@
 """auxiliary functions"""
 import numpy as np
+from abspy.tools.ps_estimator import pstimator
 
 
 def binell(modes, bins):
@@ -131,28 +132,28 @@ def oas_cov(sample):
         covariance matrix in shape (data_size,data_size)
     """
     assert isinstance(sample, np.ndarray)
-    _n, _p = sample.shape
-    assert (_n > 0 and _p > 0)
-    if _n == 1:
-        return np.zeros((_p, _p))
-    _m = np.mean(sample, axis=0)
-    _u = sample - _m
-    _s = np.dot(_u.T, _u) / _n
-    _trs = np.trace(_s)
+    n, p = sample.shape
+    assert (n > 0 and p > 0)
+    if n == 1:
+        return np.zeros((p, p))
+    m = np.mean(sample, axis=0)
+    u = sample - m
+    s = np.dot(u.T, u) / n
+    trs = np.trace(s)
     # IMAGINE implementation
-    '''
-    _trs2 = np.trace(np.dot(_s, _s))
-    _numerator = (1 - 2. / _p) * _trs2 + _trs * _trs
-    _denominator = (_n + 1. - 2. / _p) * (_trs2 - (_trs*_trs) / _p)
-    '''
+    """
+    trs2 = np.trace(np.dot(s, s))
+    numerator = (1 - 2. / p) * trs2 + trs * trs
+    denominator = (n + 1. - 2. / p) * (trs2 - (trs*trs) / p)
+    """
     # skylearn implementation
-    _mu = (_trs / _p)
-    _alpha = np.mean(_s ** 2)
-    _numerator = _alpha + _mu ** 2
-    _denominator = (_n + 1.) * (_alpha - (_mu ** 2) / _p)
+    mu = (trs / p)
+    alpha = np.mean(s ** 2)
+    numerator = alpha + mu ** 2
+    denominator = (n + 1.) * (alpha - (mu ** 2) / p)
     #
-    _rho = 1. if _denominator == 0 else min(1., _numerator / _denominator)
-    return (1. - _rho) * _s + np.eye(_p) * _rho * _trs / _p
+    rho = 1. if denominator == 0 else min(1., numerator / denominator)
+    return (1. - rho) * s + np.eye(p) * rho * trs / p
     
     
 def vec_simple(cps):
@@ -172,23 +173,23 @@ def vec_simple(cps):
     """
     assert isinstance(cps, np.ndarray)
     assert (cps.shape[-1] == cps.shape[-2])
-    _nfreq = cps.shape[-2]
-    _nmode = cps.shape[-3]
-    _dof = _nfreq*(_nfreq+1)//2
+    nfreq = cps.shape[-2]
+    nmode = cps.shape[-3]
+    dof = nfreq*(nfreq+1)//2
     if (len(cps.shape) == 3):
-        _rslt = np.zeros(_nmode*_dof)
-        for _l in range(_nmode):
-            _trimed = np.triu(cps[_l],k=0)
-            _rslt[_l*_dof:(_l+1)*_dof] = _trimed[_trimed!=0]
-        return _rslt
+        rslt = np.zeros(nmode*dof)
+        for l in range(nmode):
+            trimed = np.triu(cps[l],k=0)
+            rslt[l*dof:(l+1)*dof] = trimed[trimed!=0]
+        return rslt
     elif (len(cps.shape) == 4):
-        _nsamp = cps.shape[0]
-        _rslt = np.zeros((_nsamp,_nmode*_dof))
-        for _s in range(_nsamp):
-            for _l in range(_nmode):
-                _trimed = np.triu(cps[_s,_l],k=0)
-                _rslt[_s,_l*_dof:(_l+1)*_dof] = _trimed[_trimed!=0]
-        return _rslt
+        nsamp = cps.shape[0]
+        rslt = np.zeros((nsamp,nmode*dof))
+        for s in range(nsamp):
+            for l in range(nmode):
+                trimed = np.triu(cps[s,l],k=0)
+                rslt[s,l*dof:(l+1)*dof] = trimed[trimed!=0]
+        return rslt
     else:
         raise ValueError('unsupported input shape')
 
@@ -196,3 +197,16 @@ def vec_simple(cps):
 def g_simple(x):
     """simple likelihood g(x) function"""
     return np.sqrt(2.*np.nan_to_num(x-np.log(x)-1.))
+
+def bp_window(ps_estimator,lmax):
+    """window function matrix for converting global PS into band-powers"""
+    assert isinstance(ps_estimator, pstimator)
+    assert isinstance(lmax, int)
+    assert (lmax >= ps_estimator.lmax)
+    compress = np.zeros((len(ps_estimator.modes),lmax))
+    for i in range(len(ps_estimator.modes)):
+        lrange = np.array(ps_estimator._b.get_ell_list(i))
+        factor = 0.5*lrange*(lrange+1)/np.pi
+        w = np.array(ps_estimator._b.get_weight_list(i))
+        compress[i,lrange] = w*factor
+    return compress
