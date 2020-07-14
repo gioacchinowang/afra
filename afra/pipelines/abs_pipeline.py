@@ -2,9 +2,9 @@ import logging as log
 import numpy as np
 import healpy as hp
 from copy import deepcopy
-from abspy.methods.abs import abssep
-from abspy.tools.ps_estimator import pstimator
-from abspy.tools.icy_decorator import icy
+from afra.methods.abs import abssep
+from afra.tools.ps_estimator import pstimator
+from afra.tools.icy_decorator import icy
 
 
 @icy

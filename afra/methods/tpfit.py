@@ -1,10 +1,9 @@
 import logging as log
 import numpy as np
-from abspy.tools.icy_decorator import icy
-from abspy.tools.aux import vec_simple, g_simple
-from abspy.tools.fg_models import *
-from abspy.tools.bg_models import *
-
+from afra.tools.icy_decorator import icy
+from afra.tools.aux import vec_simple, g_simple
+from afra.tools.fg_models import fgmodel
+from afra.tools.bg_models import bgmodel
 import dynesty
 
 

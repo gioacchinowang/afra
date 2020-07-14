@@ -14,8 +14,8 @@ Galactic foreground models
 
 import logging as log
 import numpy as np
-from abspy.tools.icy_decorator import icy
-from abspy.tools.ps_estimator import pstimator
+from afra.tools.icy_decorator import icy
+from afra.tools.ps_estimator import pstimator
 
 
 @icy
@@ -27,10 +27,11 @@ class fgmodel(object):
         self.mask = mask
         self.aposcale = aposcale
         self.psbin = psbin
+        self.psbin_offset = 1
         self.templates = templates
         self.template_fwhms = template_fwhms
         self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin)  # init PS estimator
-        self._modes = self._est.modes[1:]  # discard 1st multipole bin
+        self._modes = self._est.modes[self._psbin_offset:]  # discard 1st multipole bin
         self._params = dict()  # base class holds empty dict
         self._params_dft = dict()
         self._template_ps = dict()
@@ -107,6 +108,10 @@ class fgmodel(object):
     def template_ps(self):
         return self._template_ps
 
+    @property
+    def psbin_offset(self):
+        return self._psbin_offset
+
     @template_ps.setter
     def template_ps(self, template_ps):
         assert isinstance(template_ps, dict)
@@ -136,6 +141,11 @@ class fgmodel(object):
         self._npix = mask.shape[1]
         self._nside = int(np.sqrt(self._npix//12))
 
+    @psbin_offset.setter
+    def psbin_offset(self, psbin_offset):
+        assert isinstance(psbin_offset, int)
+        self._psbin_offset = psbin_offset
+
     @templates.setter
     def templates(self, templates):
         """template maps at two frequency bands"""
@@ -148,6 +158,9 @@ class fgmodel(object):
             assert (templates[next(iter(templates))].shape[1] == self._npix)
             self._template_flag = True
             self._templates = templates
+            #apply mask
+            for key in templates.keys():
+                self._templates[key][:,self._mask[0]<1.] = 0.
         else:
             self._template_flag = False
             self._templates = None
@@ -194,9 +207,9 @@ class syncmodel(fgmodel):
         if self._template_flag:
             for ref in self._template_freqs:
                 if (self._nmap == 1):
-                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][1:]
+                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][self._psbin_offset:]
                 elif (self._nmap == 2):
-                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][1:]
+                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][self._psbin_offset:]
         else:
             raise ValueError('unimplemented feature')
     
@@ -284,9 +297,9 @@ class dustmodel(fgmodel):
         if self._template_flag:
             for ref in self._template_freqs:
                 if (self._nmap == 1):
-                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][1:]
+                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][self._psbin_offset:]
                 elif (self._nmap == 2):
-                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][1:]
+                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][self._psbin_offset:]
         else:
             raise ValueError('unimplemented feature')
 
@@ -378,9 +391,9 @@ class syncdustmodel(fgmodel):
         if self._template_flag:
             for ref in self._template_freqs:
                 if (self._nmap == 1):
-                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][1:]
+                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][self._psbin_offset:]
                 elif (self._nmap == 2):
-                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][1:]
+                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][self._psbin_offset:]
         else:
             raise ValueError('unimplemented feature')
 

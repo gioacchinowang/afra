@@ -1,6 +1,6 @@
 import logging as log
 import numpy as np
-from abspy.tools.icy_decorator import icy
+from afra.tools.icy_decorator import icy
 
 
 @icy
@@ -8,9 +8,6 @@ class abssep(object):
     """
     The ABS separator class.
 
-    Author:
-    - Jian Yao (STJU)
-    - Jiaxin Wang (SJTU) jiaxin.wang@sjtu.edu.cn
     """
     def __init__(self, signal, noise=None, sigma=None, shift=None, threshold=None):
         """

@@ -1,11 +1,11 @@
 import logging as log
 import numpy as np
-from abspy.tools.fg_models import syncdustmodel
-from abspy.tools.bg_models import cmbmodel
-from abspy.tools.ps_estimator import pstimator
-from abspy.tools.aux import vec_simple, oas_cov, g_simple, bp_window
-from abspy.tools.icy_decorator import icy
-from abspy.methods.tpfit import tpfit_simple
+from afra.tools.fg_models import * 
+from afra.tools.bg_models import * 
+from afra.tools.ps_estimator import pstimator
+from afra.tools.aux import vec_simple, oas_cov, g_simple, bp_window
+from afra.tools.icy_decorator import icy
+from afra.methods.tpfit import tpfit_simple
 
 
 @icy
@@ -25,7 +25,7 @@ class tpfpipe(object):
         foreground frequency scaling parameters
         foregorund cross-corr parameters
     """
-    def __init__(self, signals, variances, mask=None, fwhms=None, templates=None, template_fwhms=None, likelihood='simple'):
+    def __init__(self, signals, variances, mask=None, fwhms=None, templates=None, template_fwhms=None, likelihood='simple', foreground=syncdustmodel, background=cmbmodel):
         """
         Parameters
         ----------
@@ -76,6 +76,10 @@ class tpfpipe(object):
         self.param_range = dict()
         #
         self.debug = False
+        self.psbin_offset = 1
+        # choose fore-/back-ground models
+        self._foreground = foreground
+        self._background = background
        
     @property
     def nmap(self):
@@ -142,6 +146,11 @@ class tpfpipe(object):
     def nparam(self):
         """number of parameters"""
         return len(self._param_list)
+
+    @property
+    def psbin_offset(self):
+        """discard the first n multipole bins"""
+        return self._psbin_offset
         
     @param_list.setter
     def param_list(self, param_list):
@@ -197,12 +206,12 @@ class tpfpipe(object):
         
     @templates.setter
     def templates(self, templates):
-        """template maps at two frequency bands"""
+        """template maps at 1 or 2 frequency bands"""
         if templates is not None:
             assert isinstance(templates, dict)
             self._template_freqs = sorted(templates.keys())
             self._template_nfreq = len(self._template_freqs)
-            assert (self._template_nfreq == 2)
+            assert (self._template_nfreq < 3)
             assert (templates[next(iter(templates))].shape[0] == self._nmap)
             assert (templates[next(iter(templates))].shape[1] == self._npix)
             self._template_flag = True
@@ -255,12 +264,17 @@ class tpfpipe(object):
         assert isinstance(likelihood, str)
         self._likelihood = likelihood
 
+    @psbin_offset.setter
+    def psbin_offset(self, psbin_offset):
+        assert isinstance(psbin_offset, int)
+        self._psbin_offset = psbin_offset
+
     def bp_window(self,aposcale,psbin,lmax=None):
         """window function matrix for converting global PS into band-powers"""
         if lmax is None:
             lmax = 3*self._nside
         est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin)
-        return bp_window(est,lmax)
+        return bp_window(est,lmax,self._psbin_offset)
         
     def __call__(self,aposcale,psbin,nsamp,kwargs=dict()):
         """
@@ -297,6 +311,8 @@ class tpfpipe(object):
             print (aposcale)
             print ('PS estimation angular modes bin size')
             print (psbin)
+            print ('PS binning offset')
+            print (self._psbin_offset)
             print ('PS esitmation noise resampling size')
             print (nsamp)
             print ('\n')
@@ -318,8 +334,8 @@ class tpfpipe(object):
             # estimate X_hat with measured noise
             x_hat, x_mat = self.preprocess_simple(aposcale,psbin,nsamp)
             # prepare model, parameter list generated during init models
-            foreground = syncdustmodel(self._freqs,self._nmap,self._mask,aposcale,psbin,self._templates,self._template_fwhms)
-            background = cmbmodel(self._freqs,self._nmap,self._mask,aposcale,psbin)
+            foreground = self._foreground(self._freqs,self._nmap,self._mask,aposcale,psbin,self._templates,self._template_fwhms)
+            background = self._background(self._freqs,self._nmap,self._mask,aposcale,psbin)
             self._param_list = foreground.param_list + background.param_list  # update parameter list from models
             engine = tpfit_simple(x_hat,x_mat,background,foreground)
             if (len(self._param_range)):
@@ -340,7 +356,7 @@ class tpfpipe(object):
         Note that the 1st multipole bin is ignored.
         """
         est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin)  # init PS estimator
-        modes = est.modes[1:]  # angular modes
+        modes = est.modes[self._psbin_offset:]  # angular modes
         if (self._nmap == 1):
             ps_t = np.zeros((nsamp,len(modes),self._nfreq,self._nfreq),dtype=np.float32)
             for s in range(nsamp):
@@ -351,14 +367,15 @@ class tpfpipe(object):
                     stmp = est.auto_t(self._signals[i]+ntmp,fwhms=self._fwhms[i])
                     # assign results
                     for k in range(len(modes)):
-                        ps_t[s,k,i,i] = stmp[1][k+1]
+                        ps_t[s,k,i,i] = stmp[1][k+self._psbin_offset]
                     # cross correlation
                     for j in range(i+1,self._nfreq):
                         # cross correlation
                         ntmp = np.random.normal(size=(self._nmap*2,self._npix))*np.sqrt(np.r_[self._variances[i],self._variances[j]])
                         stmp = est.cross_t(np.r_[self._signals[i],self._signals[j]]+ntmp,fwhms=[self._fwhms[i],self._fwhms[j]])
                         for k in range(len(modes)):
-                            ps_t[s,k,i,j] = stmp[1][k+1]
+                            ps_t[s,k,i,j] = stmp[1][k+self._psbin_offset]
+                            ps_t[s,k,j,i] = stmp[1][k+self._psbin_offset]
             xl_set = vec_simple(ps_t)
             return ( np.mean(xl_set,axis=0), oas_cov(xl_set) )
         elif (self._nmap == 2):
@@ -372,14 +389,15 @@ class tpfpipe(object):
                     stmp = est.auto_eb(self._signals[i]+ntmp,fwhms=self._fwhms[i])
                     # assign results
                     for k in range(len(modes)):
-                        ps_b[s,k,i,i] = stmp[2][k+1]
+                        ps_b[s,k,i,i] = stmp[2][k+self._psbin_offset]
                     # cross correlation
                     for j in range(i+1,self._nfreq):
                         # cross correlation
                         ntmp = np.random.normal(size=(self._nmap*2,self._npix))*np.sqrt(np.r_[self._variances[i],self._variances[j]])
                         stmp = est.cross_eb(np.r_[self._signals[i],self._signals[j]]+ntmp,fwhms=[self._fwhms[i],self._fwhms[j]])
                         for k in range(len(modes)):
-                            ps_b[s,k,i,j] = stmp[2][k+1]
+                            ps_b[s,k,i,j] = stmp[2][k+self._psbin_offset]
+                            ps_b[s,k,j,i] = stmp[2][k+self._psbin_offset]
             xl_set = vec_simple(ps_b)
             return ( np.mean(xl_set,axis=0), oas_cov(xl_set) )
         else:

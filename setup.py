@@ -1,14 +1,14 @@
 from setuptools import setup, find_packages
 
-setup(name="abspy",
+setup(name="afra",
       version="1.0.0",
-      description="Analytical method of Blind Separation",
+      description="AliCPT foreground removal analysis",
       license="GPLv3",
-      url="https://github.com/gioacchinowang/ABSpy",
+      url="https://github.com/gioacchinowang/afra",
       packages=find_packages(),
       dependency_links=[],
       python_requires='>=3.5',
-      install_requires=['numpy', 'healpy', 'pymultinest'],
+      install_requires=['numpy', 'healpy'],
       zip_safe=False,
       classifiers=["Development Status :: 4 - Beta",
                    "Topic :: Utilities",

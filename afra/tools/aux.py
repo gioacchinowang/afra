@@ -1,6 +1,6 @@
 """auxiliary functions"""
 import numpy as np
-from abspy.tools.ps_estimator import pstimator
+from afra.tools.ps_estimator import pstimator
 
 
 def binell(modes, bins):
@@ -194,19 +194,27 @@ def vec_simple(cps):
         raise ValueError('unsupported input shape')
 
 
-def g_simple(x):
-    """simple likelihood g(x) function"""
-    return np.sqrt(2.*np.nan_to_num(x-np.log(x)-1.))
+def bp_window(ps_estimator,lmax,offset=1):
+    """window function matrix for converting PS into band-powers
 
-def bp_window(ps_estimator,lmax):
-    """window function matrix for converting global PS into band-powers"""
+    Parameters
+    ----------
+
+    ps_estimator
+
+    lmax : int
+        maximal multipole for Cl
+
+    offset : int
+        discard the first offset multipole bins
+    """
     assert isinstance(ps_estimator, pstimator)
     assert isinstance(lmax, int)
     assert (lmax >= ps_estimator.lmax)
-    compress = np.zeros((len(ps_estimator.modes),lmax))
-    for i in range(len(ps_estimator.modes)):
-        lrange = np.array(ps_estimator._b.get_ell_list(i))
+    compress = np.zeros((len(ps_estimator.modes)-offset,lmax))
+    for i in range(len(ps_estimator.modes)-offset):
+        lrange = np.array(ps_estimator._b.get_ell_list(i+offset))
         factor = 0.5*lrange*(lrange+1)/np.pi
-        w = np.array(ps_estimator._b.get_weight_list(i))
+        w = np.array(ps_estimator._b.get_weight_list(i+offset))
         compress[i,lrange] = w*factor
     return compress

@@ -1,10 +1,10 @@
-import abspy as ap
+import afra as af
+from afra.tools.ps_estimator import pstimator
 import healpy as hp
 import numpy as np
 import pysm
 import pysm.units as u
 import camb
-from camb import model, initialpower
 
 
 def main():
@@ -64,7 +64,7 @@ def main():
     fullmap = signalmaps[:,0,:].reshape(NFREQ,1,12*NSIDE**2)
     fullvar = varmaps[:,0,:].reshape(NFREQ,1,12*NSIDE**2)
     
-    pipeline1 = ap.abspipe(fullmap,mask=maskmap.reshape(1,-1),variances=fullvar,fwhms=FWHMS,lmax=LMAX)
+    pipeline1 = af.abspipe(fullmap,mask=maskmap.reshape(1,-1),variances=fullvar,fwhms=FWHMS,lmax=LMAX)
     pipeline1.nsamp = NSAMP
     pipeline1.debug = True
     rslt_t = pipeline1.run(aposcale=APOSCALE,psbin=PSBIN,shift=SHIFT_T,threshold=CUT_T)
@@ -72,7 +72,7 @@ def main():
     fullmap = signalmaps[:,1:,:].reshape(NFREQ,2,12*NSIDE**2)
     fullvar = varmaps[:,1:,:].reshape(NFREQ,2,12*NSIDE**2)
     
-    pipeline2 = ap.abspipe(fullmap,mask=maskmap.reshape(1,-1),variances=fullvar,fwhms=FWHMS,lmax=LMAX)
+    pipeline2 = af.abspipe(fullmap,mask=maskmap.reshape(1,-1),variances=fullvar,fwhms=FWHMS,lmax=LMAX)
     pipeline2.nsamp = NSAMP
     pipeline2.debug = True
     rslt_eb = pipeline2.run(aposcale=APOSCALE,psbin=PSBIN,shift=SHIFT_EB,threshold=CUT_EB)
@@ -84,7 +84,7 @@ def main():
     output.append(rslt_eb[2])
     
     # calculate binned CMB band-power from input Cl
-    est = ap.pstimator(nside=NSIDE,mask=maskmap.reshape(1,-1),aposcale=APOSCALE,psbin=PSBIN)
+    est = pstimator(nside=NSIDE,mask=maskmap.reshape(1,-1),aposcale=APOSCALE,psbin=PSBIN)
     cmb_dl = np.zeros((3,len(est.modes)))
     for i in range(len(est.modes)):
         lrange = np.array(est._b.get_ell_list(i))
