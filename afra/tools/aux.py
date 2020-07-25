@@ -1,5 +1,6 @@
 """auxiliary functions"""
 import numpy as np
+import healpy as hp
 from afra.tools.ps_estimator import pstimator
 
 
@@ -195,12 +196,15 @@ def vec_simple(cps):
 
 
 def bp_window(ps_estimator,lmax,offset=1):
-    """window function matrix for converting PS into band-powers
+    """
+    "top-hat" window function matrix 
+    for converting PS into band-powers
 
     Parameters
     ----------
 
     ps_estimator
+        the wrapped-in power-spectrum estimator
 
     lmax : int
         maximal multipole for Cl
@@ -218,3 +222,64 @@ def bp_window(ps_estimator,lmax,offset=1):
         w = np.array(ps_estimator._b.get_weight_list(i+offset))
         compress[i,lrange] = w*factor
     return compress
+
+def Mbpconv_t(nside,mask=None,ensemble=10):
+    """
+    matrix for converting true PS to masked PS,
+    works for T mode to T mode conversion,
+    Cl_masked = M.dott(Cl_true)
+    """
+    if mask is None:
+        mask = np.ones(12*nside**2)
+    else:
+        assert isinstance(mask, np.ndarray)
+        assert (len(mask) == 12*nside**2)
+    lmax = 3*nside
+    result = np.zeros((lmax,lmax))
+    # do not count monopole & dipole
+    for l_pivot in range(2,lmax):
+        cl_in = np.zeros(lmax)
+        cl_out = np.zeros(lmax)
+        cl_in[l_pivot] = 1.
+        for k in range(ensemble):
+            intmap = hp.synfast(cl_in,nside=nside,new=True,verbose=False)
+            intmap *= mask
+            cl_out += hp.anafast(intmap)
+        result[:,l_pivot] = cl_out/ensemble
+    return result
+
+def Mbpconv_eb(nside,mask=None,ensemble=10):
+    """
+    matrix for converting true PS to masked PS,
+    works for E&B mode to E mode conversion,
+    [Cl_masked_ee,Cl_masked_bb] = M.dott(np.r_[Cl_true_ee,Cl_true_bb]).reshape(2,-1)
+    """
+    if mask is None:
+        mask = np.ones(12*nside**2)
+    else:
+        assert isinstance(mask, np.ndarray)
+        assert (len(mask) == 12*nside**2)
+    lmax = 3*nside
+    result = np.zeros((2*lmax,2*lmax))
+    # do not count monopole & dipole
+    for l_pivot in range(2,lmax):
+        cl_in = np.zeros((2,4,lmax))
+        cl_out = np.zeros((4,lmax))
+        cl_in[0,1,l_pivot] = 1.  # E mode injection
+        cl_in[1,2,l_pivot] = 1.  # B mode injection
+        for k in range(ensemble):
+            intmap_e = hp.synfast(cl_in[0],nside=nside,new=True,verbose=False)
+            intmap_b = hp.synfast(cl_in[1],nside=nside,new=True,verbose=False)
+            intmap_e *= mask
+            intmap_b *= mask
+            tmp_cl_e = hp.anafast(intmap_e)
+            tmp_cl_b = hp.anafast(intmap_b)
+            cl_out[0] += tmp_cl_e[1]  # E to E
+            cl_out[1] += tmp_cl_b[1]  # B to E
+            cl_out[2] += tmp_cl_e[2]  # E to B
+            cl_out[3] += tmp_cl_b[2]  # B to B
+        result[:lmax,l_pivot] = cl_out[0]/ensemble
+        result[:lmax,l_pivot+lmax] = cl_out[1]/ensemble
+        result[lmax:,l_pivot] = cl_out[2]/ensemble
+        result[lmax:,l_pivot+lmax] = cl_out[3]/ensemble
+    return result

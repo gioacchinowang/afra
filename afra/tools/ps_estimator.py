@@ -11,6 +11,9 @@ from afra.tools.icy_decorator import icy
 
 @icy
 class pstimator(object):
+    """
+    power-spectrum estimator using NaMaster
+    """
 
     def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmax=None):
         """
@@ -132,6 +135,8 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (1,self._npix))
+        maps = maps.copy()
+        maps[:,self._mask[0]==0.] = 0.  # !!!
         # assemble NaMaster fields
         if fwhms is None:
             f0 = nmt.NmtField(self._mask[0], [maps[0]])
@@ -175,6 +180,8 @@ class pstimator(object):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (2,self._npix))
         assert (len(fwhms) == 2)
+        maps = maps.copy()
+        maps[:,self._mask[0]==0.] = 0.  # !!!
         # assemble NaMaster fields
         if fwhms[0] is None:
             f01 = nmt.NmtField(self._mask[0], [maps[0]])
@@ -222,6 +229,8 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (2,self._npix))
+        maps = maps.copy()
+        maps[:,self._mask[0]==0.] = 0.  # !!!
         # assemble NaMaster fields
         if fwhms is None:
             f2 = nmt.NmtField(self._mask[0], [maps[0], maps[1]], purify_e=False, purify_b=True)
@@ -266,6 +275,8 @@ class pstimator(object):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (4,self._npix))
         assert (len(fwhms) == 2)
+        maps = maps.copy()
+        maps[:,self._mask[0]==0.] = 0.  # !!!
         # assemble NaMaster fields
         if fwhms[0] is None:
             f21 = nmt.NmtField(self._mask[0], [maps[0], maps[1]], purify_e=False, purify_b=True)
@@ -290,6 +301,8 @@ class pstimator(object):
     def auto_teb(self, maps, fwhms=None):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (3,self._npix))
+        maps = maps.copy()
+        maps[:,self._mask[0]==0.] = 0.  # !!!
         # assemble NaMaster fields
         if fwhms is None:
             f0 = nmt.NmtField(self._mask[0], [maps[0]])
@@ -306,6 +319,8 @@ class pstimator(object):
     def cross_teb(self, maps, wsp=None, fwhms=[None,None]):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (6,self._npix))
+        maps = maps.copy()
+        maps[:,self._mask[0]==0.] = 0.  # !!!
         # assemble NaMaster fields
         if fwhms[0] is None:
             f01 = nmt.NmtField(self._mask[0], [maps[0]])

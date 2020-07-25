@@ -60,6 +60,8 @@ class abspipe(object):
         self.nsamp = 1000
         # debug mode
         self.debug = False
+        # ps estimator
+        self._est = None
 
     @property
     def signals(self):
@@ -148,10 +150,10 @@ class abspipe(object):
             assert (mask.shape == (1,self._npix))
             self._mask = mask.copy()
         # clean up input maps with mask
-        self._mask[:,self._mask[0]<1.] = 0.
-        self._signals[:,:,self._mask[0]<1.] = 0.
+        self._mask[:,self._mask[0]==0.] = 0.
+        self._signals[:,:,self._mask[0]==0.] = 0.
         if self._variances is not None:
-            self._variances[:,:,self._mask[0]<1.] = 0.
+            self._variances[:,:,self._mask[0]==0.] = 0.
         log.debug('mask map loaded')
         
     @nsamp.setter
@@ -209,19 +211,24 @@ class abspipe(object):
         return self.run(aposcale, psbin, shift, threshold, verbose)
         
     def run(self, aposcale, psbin, shift, threshold, verbose=False):
+        # init PS estimator
+        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)
         # method selection
-        return self._methodict[(self._noise_flag,self._nmap)](aposcale, psbin, shift, threshold, verbose)
+        return self._methodict[(self._noise_flag,self._nmap)](shift, threshold, verbose)
         
     def run_bmode(self, aposcale, psbin, shift, threshold, verbose=False):
         """alternative routine for B mode only,
         with EB-leakage corrected before PS estimation,
         for pipeline test only"""
+        # init PS estimator
+        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)
+        # method selection
         if self._noise_flag:
-            return self.method_noisyB(aposcale, psbin, shift, threshold, verbose)
+            return self.method_noisyB(shift, threshold, verbose)
         else:
-            return self.method_pureB(aposcale, psbin, shift, threshold, verbose)
+            return self.method_pureB(shift, threshold, verbose)
     
-    def method_pureT(self, aposcale, psbin, shift, threshold, verbose):
+    def method_pureT(self, shift, threshold, verbose):
         """
         CMB T mode (band power) extraction without noise.
         
@@ -229,19 +236,18 @@ class abspipe(object):
         -------
         angular modes, T-mode PS
         """
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
-        modes = est.modes
+        modes = self._est.modes
         # prepare total signals PS in the shape required by ABS method
         signal_ps_t = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
             # auto correlation
-            stmp = est.auto_t(self._signals[i],fwhms=self._fwhms[i])
+            stmp = self._est.auto_t(self._signals[i],fwhms=self._fwhms[i])
             # assign results
             for k in range(len(modes)):
                 signal_ps_t[k,i,i] = stmp[1][k]
             # cross correlation
             for j in range(i+1,self._nfreq):
-                stmp = est.cross_t(np.r_[self._signals[i],self._signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
+                stmp = self._est.cross_t(np.r_[self._signals[i],self._signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
                 for k in range(len(modes)):
                     signal_ps_t[k,i,j] = stmp[1][k]
                     signal_ps_t[k,j,i] = stmp[1][k]
@@ -251,7 +257,7 @@ class abspipe(object):
             return (modes, spt_t.run(), spt_t.run_info())
         return (modes, spt_t.run())
         
-    def method_noisyT_raw(self, aposcale, psbin):
+    def method_noisyT_raw(self):
         """
         CMB T mode (band power) extraction with noise.
         
@@ -260,16 +266,14 @@ class abspipe(object):
         
         angular modes, T-mode PS, T-mode PS std
         """
-        # estimate noise PS and noise RMS
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run trial PS estimations for workspace template
         wsp_dict = dict()
-        modes = est.modes
+        modes = self._est.modes
         for i in range(self._nfreq):
-            tmp = est.auto_t(self._signals[0],fwhms=self._fwhms[i])
+            tmp = self._est.auto_t(self._signals[0],fwhms=self._fwhms[i])
             wsp_dict[(i,i)] = tmp[-1]  # register workspace
             for j in range(i+1,self._nfreq):
-                tmp = est.cross_t(self._signals[:2,0],fwhms=[self._fwhms[i],self._fwhms[j]])
+                tmp = self._est.cross_t(self._signals[:2,0],fwhms=[self._fwhms[i],self._fwhms[j]])
                 wsp_dict[(i,j)] = tmp[-1]  # register workspace
         # allocate
         noise_ps_t = np.zeros((self._nsamp,len(modes),self._nfreq,self._nfreq),dtype=np.float64)
@@ -280,12 +284,11 @@ class abspipe(object):
             # prepare noise samples on-fly
             for i in range(self._nfreq):
                 # noise realization
-                mtmp = np.random.normal(size=self._npix)*np.sqrt(self._variances[i,0])
-                noise_map[0] = mtmp
-                signal_map[0] = self._signals[i,0] + mtmp
+                noise_map[0] = np.random.normal(size=self._npix)*np.sqrt(self._variances[i,0])
+                signal_map[0] = self._signals[i,0] + noise_map[0]
                 # auto correlation
-                ntmp = est.auto_t(noise_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
-                stmp = est.auto_t(signal_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
+                ntmp = self._est.auto_t(noise_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
+                stmp = self._est.auto_t(signal_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
                 # assign results
                 for k in range(len(modes)):
                     noise_ps_t[s,k,i,i] = ntmp[1][k]
@@ -293,21 +296,20 @@ class abspipe(object):
                 # cross correlation
                 for j in range(i+1,self._nfreq):
                     # noise realization
-                    mtmp = np.random.normal(size=self._npix)*np.sqrt(self._variances[j,0])
-                    noise_map[1] = mtmp
-                    signal_map[1] = self._signals[j,0] + mtmp
+                    noise_map[1] = np.random.normal(size=self._npix)*np.sqrt(self._variances[j,0])
+                    signal_map[1] = self._signals[j,0] + noise_map[1]
                     # cross correlation
-                    ntmp = est.cross_t(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
-                    stmp = est.cross_t(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    ntmp = self._est.cross_t(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    stmp = self._est.cross_t(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
                     for k in range(len(modes)):
                         noise_ps_t[s,k,i,j] = ntmp[1][k]
                         noise_ps_t[s,k,j,i] = ntmp[1][k]
                         signal_ps_t[s,k,i,j] = stmp[1][k]
                         signal_ps_t[s,k,j,i] = stmp[1][k]
-        return modes, noise_ps_t, signal_ps_t
+        return (modes, noise_ps_t, signal_ps_t)
         
-    def method_noisyT(self, aposcale, psbin, shift, threshold, verbose):
-        modes, noise_ps_t, signal_ps_t = self.method_noisyT_raw(aposcale,psbin)
+    def method_noisyT(self, shift, threshold, verbose):
+        modes, noise_ps_t, signal_ps_t = self.method_noisyT_raw()
         # get noise PS mean and rms
         noise_ps_t_mean = np.mean(noise_ps_t,axis=0)
         noise_ps_t_std = np.std(noise_ps_t,axis=0)
@@ -319,10 +321,10 @@ class abspipe(object):
         rslt_Dt = np.zeros((self._nsamp,len(modes)),dtype=np.float64)
         for s in range(self._nsamp):
             # send PS to ABS method
-            spt_t = abssep(signal_ps_t[s],noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
+            spt_t = abssep(signal_ps_t[s]-noise_ps_t_mean,noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
             rslt_Dt[s] = spt_t.run()
         if verbose:
-            spt_t = abssep(np.mean(signal_ps_t,axis=0),noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
+            spt_t = abssep(np.mean(signal_ps_t,axis=0)-noise_ps_t_mean,noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
             if self._debug:
                 return (modes, rslt_Dt, spt_t.run_info())
             return (modes, np.mean(rslt_Dt,axis=0), np.std(rslt_Dt,axis=0), spt_t.run_info())
@@ -330,7 +332,7 @@ class abspipe(object):
             return (modes, rslt_Dt)
         return (modes, np.mean(rslt_Dt,axis=0), np.std(rslt_Dt,axis=0))
     
-    def method_pureEB(self, aposcale, psbin, shift, threshold, verbose):
+    def method_pureEB(self, shift, threshold, verbose):
         """
         CMB E and B modes (band power) extraction without noise.
         
@@ -339,20 +341,19 @@ class abspipe(object):
         
         angular modes, E-mode PS, B-mode
         """
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
-        modes = est.modes  # register angular modes
+        modes = self._est.modes  # register angular modes
         signal_ps_e = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
         signal_ps_b = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
             # auto corr
-            stmp = est.auto_eb(self._signals[i],fwhms=self._fwhms[i])
+            stmp = self._est.auto_eb(self._signals[i],fwhms=self._fwhms[i])
             # assign results
             for k in range(len(modes)):
                 signal_ps_e[k,i,i] = stmp[1][k]
                 signal_ps_b[k,i,i] = stmp[2][k]
             # cross corr
             for j in range(i+1,self._nfreq):
-                stmp = est.cross_eb(np.r_[self._signals[i],self._signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
+                stmp = self._est.cross_eb(np.r_[self._signals[i],self._signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
                 for k in range(len(modes)):
                     signal_ps_e[k,i,j] = stmp[1][k]
                     signal_ps_b[k,i,j] = stmp[2][k]
@@ -365,7 +366,7 @@ class abspipe(object):
             return (modes, spt_e.run(), spt_b.run(), spt_e.run_info(), spt_b.run_info())
         return (modes, spt_e.run(), spt_b.run())
         
-    def method_noisyEB_raw(self, aposcale, psbin):
+    def method_noisyEB_raw(self):
         """
         CMB E and B modes (band power) extraction with noise.
         
@@ -374,16 +375,14 @@ class abspipe(object):
         
         angular modes, E-mode PS, E-mode PS std, B-mode PS, B-mode PS std
         """
-        # estimate noise PS and noise RMS
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run trial PS estimations for workspace template
         wsp_dict = dict()
-        modes = est.modes
+        modes = self._est.modes
         for i in range(self._nfreq):
-            tmp = est.auto_eb(self._signals[0],fwhms=self._fwhms[i])
+            tmp = self._est.auto_eb(self._signals[0],fwhms=self._fwhms[i])
             wsp_dict[(i,i)] = tmp[-1]  # register workspace
             for j in range(i+1,self._nfreq):
-                tmp = est.cross_eb(self._signals[:2].reshape(4,-1),fwhms=[self._fwhms[i],self._fwhms[j]])
+                tmp = self._est.cross_eb(self._signals[:2].reshape(4,-1),fwhms=[self._fwhms[i],self._fwhms[j]])
                 wsp_dict[(i,j)] = tmp[-1]  # register workspace
         # allocate
         noise_ps_e = np.zeros((self._nsamp,len(modes),self._nfreq,self._nfreq),dtype=np.float64)
@@ -396,15 +395,13 @@ class abspipe(object):
             # prepare noise samples on-fly
             for i in range(self._nfreq):
                 # noise realization
-                mtmp = np.random.normal(size=self._npix)*np.sqrt(self._variances[i,0])
-                noise_map[0] = mtmp
-                signal_map[0] = self._signals[i,0] + mtmp
-                mtmp = np.random.normal(size=self._npix)*np.sqrt(self._variances[i,1])
-                noise_map[1] = mtmp
-                signal_map[1] = self._signals[i,1] + mtmp
+                noise_map[0] = np.random.normal(size=self._npix)*np.sqrt(self._variances[i,0])
+                signal_map[0] = self._signals[i,0] + noise_map[0]
+                noise_map[1] = np.random.normal(size=self._npix)*np.sqrt(self._variances[i,1])
+                signal_map[1] = self._signals[i,1] + noise_map[1]
                 # auto correlation
-                ntmp = est.auto_eb(noise_map[:2],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
-                stmp = est.auto_eb(signal_map[:2],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
+                ntmp = self._est.auto_eb(noise_map[:2],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
+                stmp = self._est.auto_eb(signal_map[:2],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
                 # assign results
                 for k in range(len(modes)):
                     noise_ps_e[s,k,i,i] = ntmp[1][k]
@@ -414,15 +411,13 @@ class abspipe(object):
                 # cross correlation
                 for j in range(i+1,self._nfreq):
                     # noise realization
-                    mtmp = np.random.normal(size=self._npix)*np.sqrt(self._variances[j,0])
-                    noise_map[2] = mtmp
-                    signal_map[2] = self._signals[j,0] + mtmp
-                    mtmp = np.random.normal(size=self._npix)*np.sqrt(self._variances[j,1])
-                    noise_map[3] = mtmp
-                    signal_map[3] = self._signals[j,1] + mtmp
+                    noise_map[2] = np.random.normal(size=self._npix)*np.sqrt(self._variances[j,0])
+                    signal_map[2] = self._signals[j,0] + noise_map[2]
+                    noise_map[3] = np.random.normal(size=self._npix)*np.sqrt(self._variances[j,1])
+                    signal_map[3] = self._signals[j,1] + noise_map[3]
                     # cross correlation
-                    ntmp = est.cross_eb(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
-                    stmp = est.cross_eb(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    ntmp = self._est.cross_eb(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    stmp = self._est.cross_eb(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
                     for k in range(len(modes)):
                         noise_ps_e[s,k,i,j] = ntmp[1][k]
                         noise_ps_b[s,k,i,j] = ntmp[2][k]
@@ -434,8 +429,8 @@ class abspipe(object):
                         signal_ps_b[s,k,j,i] = stmp[2][k]
         return (modes, noise_ps_e, noise_ps_b, signal_ps_e, signal_ps_b)
         
-    def method_noisyEB(self, aposcale, psbin, shift, threshold, verbose):
-        modes, noise_ps_e, noise_ps_b, signal_ps_e, signal_ps_b = self.method_noisyEB_raw(aposcale,psbin)
+    def method_noisyEB(self, shift, threshold, verbose):
+        modes, noise_ps_e, noise_ps_b, signal_ps_e, signal_ps_b = self.method_noisyEB_raw()
         # get noise PS mean and rms
         noise_ps_e_mean = np.mean(noise_ps_e,axis=0)
         noise_ps_e_std = np.std(noise_ps_e,axis=0)
@@ -453,14 +448,14 @@ class abspipe(object):
         rslt_Db = np.zeros((self._nsamp,len(modes)),dtype=np.float64)
         for s in range(self._nsamp):
             # send PS to ABS method
-            spt_e = abssep(signal_ps_e[s],noise_ps_e_mean,noise_ps_e_std_diag,shift=safe_shift_e,threshold=threshold)
-            spt_b = abssep(signal_ps_b[s],noise_ps_b_mean,noise_ps_b_std_diag,shift=safe_shift_b,threshold=threshold)
+            spt_e = abssep(signal_ps_e[s]-noise_ps_e_mean,noise_ps_e_mean,noise_ps_e_std_diag,shift=safe_shift_e,threshold=threshold)
+            spt_b = abssep(signal_ps_b[s]-noise_ps_b_mean,noise_ps_b_mean,noise_ps_b_std_diag,shift=safe_shift_b,threshold=threshold)
             rslt_De[s] = spt_e.run()
             rslt_Db[s] = spt_b.run()
         # get result
         if verbose:
-            spt_e = abssep(np.mean(signal_ps_e,axis=0),noise_ps_e_mean,noise_ps_e_std_diag,shift=safe_shift_e,threshold=threshold)
-            spt_b = abssep(np.mean(signal_ps_b,axis=0),noise_ps_b_mean,noise_ps_b_std_diag,shift=safe_shift_b,threshold=threshold)
+            spt_e = abssep(np.mean(signal_ps_e,axis=0)-noise_ps_e_mean,noise_ps_e_mean,noise_ps_e_std_diag,shift=safe_shift_e,threshold=threshold)
+            spt_b = abssep(np.mean(signal_ps_b,axis=0)-noise_ps_b_mean,noise_ps_b_mean,noise_ps_b_std_diag,shift=safe_shift_b,threshold=threshold)
             if self._debug:
                 return (modes, rslt_De, rslt_Db, spt_e.run_info(), spt_b.run_info())
             return (modes, np.mean(rslt_De,axis=0), np.std(rslt_De,axis=0), np.mean(rslt_Db,axis=0), np.std(rslt_Db,axis=0), spt_e.run_info(), spt_b.run_info())
@@ -468,7 +463,7 @@ class abspipe(object):
             return (modes, rslt_De, rslt_Db)
         return (modes, np.mean(rslt_De,axis=0), np.std(rslt_De,axis=0), np.mean(rslt_Db,axis=0), np.std(rslt_Db,axis=0))
         
-    def method_pureB(self, aposcale, psbin, shift, threshold, verbose):
+    def method_pureB(self, shift, threshold, verbose):
         """
         CMB B mode (band power) extration without noise
         
@@ -476,22 +471,21 @@ class abspipe(object):
         -------
         angular mdoes, B-mode PS
         """
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # get B mode maps from self._signals
         bmaps = self.purify()
         # run a trial PS estimation
-        modes = est.modes
+        modes = self._est.modes
         # prepare total signals PS in the shape required by ABS method
         signal_ps_t = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
         for i in range(self._nfreq):
             # auto correlation
-            stmp = est.auto_t(bmaps[i],fwhms=self._fwhms[i])
+            stmp = self._est.auto_t(bmaps[i],fwhms=self._fwhms[i])
             # assign results
             for k in range(len(modes)):
                 signal_ps_t[k,i,i] = stmp[1][k]
             # cross correlation
             for j in range(i+1,self._nfreq):
-                stmp = est.cross_t(np.vstack([bmaps[i],bmaps[j]]),fwhms=[self._fwhms[i],self._fwhms[j]])
+                stmp = self._est.cross_t(np.vstack([bmaps[i],bmaps[j]]),fwhms=[self._fwhms[i],self._fwhms[j]])
                 for k in range(len(modes)):
                     signal_ps_t[k,i,j] = stmp[1][k]
                     signal_ps_t[k,j,i] = stmp[1][k]
@@ -501,7 +495,7 @@ class abspipe(object):
             return (modes, spt_t.run(), spt_t.run_info())
         return (modes, spt_t.run())
         
-    def method_noisyB_raw(self, aposcale, psbin):
+    def method_noisyB_raw(self):
         """
         CMB B mode (band power) extraction with noise.
         
@@ -510,16 +504,14 @@ class abspipe(object):
         
         angular modes, B-mode PS, B-mode PS std
         """
-        # estimate noise PS and noise RMS
-        est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)  # init PS estimator
         # run trial PS estimations for workspace template
         wsp_dict = dict()
-        modes = est.modes
+        modes = self._est.modes
         for i in range(self._nfreq):
-            tmp = est.auto_t(self._signals[0,0].reshape(1,-1),fwhms=self._fwhms[i])
+            tmp = self._est.auto_t(self._signals[0,0].reshape(1,-1),fwhms=self._fwhms[i])
             wsp_dict[(i,i)] = tmp[-1]  # register workspace
             for j in range(i+1,self._nfreq):
-                tmp = est.cross_t(self._signals[:2,0],fwhms=[self._fwhms[i],self._fwhms[j]])
+                tmp = self._est.cross_t(self._signals[:2,0],fwhms=[self._fwhms[i],self._fwhms[j]])
                 wsp_dict[(i,j)] = tmp[-1]  # register workspace
         # allocate
         noise_ps_t = np.zeros((self._nsamp,len(modes),self._nfreq,self._nfreq),dtype=np.float64)
@@ -534,8 +526,8 @@ class abspipe(object):
                 noise_map[0] = self.purify_mono(mtmp)
                 signal_map[0] = self.purify_mono(self._signals[i] + mtmp)
                 # auto correlation
-                ntmp = est.auto_t(noise_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
-                stmp = est.auto_t(signal_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
+                ntmp = self._est.auto_t(noise_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
+                stmp = self._est.auto_t(signal_map[0].reshape(1,-1),wsp=wsp_dict[(i,i)],fwhms=self._fwhms[i])
                 # assign results
                 for k in range(len(modes)):
                     noise_ps_t[s,k,i,i] = ntmp[1][k]
@@ -547,17 +539,17 @@ class abspipe(object):
                     noise_map[1] = self.purify_mono(mtmp)
                     signal_map[1] = self.purify_mono(self._signals[j] + mtmp)
                     # cross correlation
-                    ntmp = est.cross_t(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
-                    stmp = est.cross_t(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    ntmp = self._est.cross_t(noise_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    stmp = self._est.cross_t(signal_map,wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[i],self._fwhms[j]])
                     for k in range(len(modes)):
                         noise_ps_t[s,k,i,j] = ntmp[1][k]
                         noise_ps_t[s,k,j,i] = ntmp[1][k]
                         signal_ps_t[s,k,i,j] = stmp[1][k]
                         signal_ps_t[s,k,j,i] = stmp[1][k]
-        return modes, noise_ps_t, signal_ps_t
+        return (modes, noise_ps_t, signal_ps_t)
         
-    def method_noisyB(self, aposcale, psbin, shift, threshold, verbose):
-        modes, noise_ps_t, signal_ps_t = self.method_noisyB_raw(aposcale,psbin)
+    def method_noisyB(self, shift, threshold, verbose):
+        modes, noise_ps_t, signal_ps_t = self.method_noisyB_raw()
         # get noise PS mean and rms
         noise_ps_t_mean = np.mean(noise_ps_t,axis=0)
         noise_ps_t_std = np.std(noise_ps_t,axis=0)
@@ -569,10 +561,10 @@ class abspipe(object):
         rslt_Dt = np.zeros((self._nsamp,len(modes)),dtype=np.float64)
         for s in range(self._nsamp):
             # send PS to ABS method
-            spt_t = abssep(signal_ps_t[s],noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
+            spt_t = abssep(signal_ps_t[s]-noise_ps_t_mean,noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
             rslt_Dt[s] = spt_t.run()
         if verbose:
-            spt_t = abssep(np.mean(signal_ps_t,axis=0),noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
+            spt_t = abssep(np.mean(signal_ps_t,axis=0)-noise_ps_t_mean,noise_ps_t_mean,noise_ps_t_std_diag,shift=safe_shift,threshold=threshold)
             if self._debug:
                 return (modes, rslt_Dt, spt_t.run_info())
             return (modes, np.mean(rslt_Dt,axis=0), np.std(rslt_Dt,axis=0), spt_t.run_info())
@@ -599,34 +591,33 @@ class abspipe(object):
             B mode maps at various frequencies,
             in shape (N_freq, 1, N_pix).
         """
-        _mask_sum = np.sum(self._mask[0])
-        _pix_list = np.arange(self._npix)
-        _mflag = self._mask[0] < 1.
-        _fill = np.arange(self._npix)[np.where(self._mask[0] == 1)] # the pixel index of the available index
-        _rslt = np.zeros((self._nfreq,1,self._npix),dtype=np.float64)
+        mask_sum = np.sum(self._mask[0])
+        pix_list = np.arange(self._npix)
+        fill = np.arange(self._npix)[np.where(self._mask[0]==1.)] # the pixel index of the available index
+        rslt = np.zeros((self._nfreq,1,self._npix),dtype=np.float64)
         # process at each frequency
         for i in range(self._nfreq):
             # get the template of E to B leakage
-            _Alm0 = hp.map2alm(self._signals[i]) #alms of the masked maps
-            _B0 = hp.alm2map(_Alm0[2],nside=self._nside,verbose=0)  # corrupted B map
-            _Alm0[0] = 0.
-            _Alm0[2] = 0.
-            _E0 = hp.alm2map(_Alm0,nside=self._nside,verbose=0)  # TQU of corrupted E mode only
-            _E0[:,_mflag] = 0.  # re-mask
-            _Alm1 = hp.map2alm(_E0)  # Alms of the TUQ from E-mode only
-            _B1 = hp.alm2map(_Alm1[2],nside=self._nside,verbose=0)  # template of EB leakage
+            Alm0 = hp.map2alm(self._signals[i]) #alms of the masked maps
+            B0 = hp.alm2map(Alm0[2],nside=self._nside,verbose=0)  # corrupted B map
+            Alm0[0] = 0.
+            Alm0[2] = 0.
+            E0 = hp.alm2map(Alm0,nside=self._nside,verbose=0)  # TQU of corrupted E mode only
+            E0[:,self._mask[0]==0.] = 0.  # re-mask
+            Alm1 = hp.map2alm(E0)  # Alms of the TUQ from E-mode only
+            B1 = hp.alm2map(Alm1[2],nside=self._nside,verbose=0)  # template of EB leakage
             # compute the residual of linear fit
-            _x = _B1[_fill]
-            _y = _B0[_fill]
-            _mx  = np.sum(_x)/_mask_sum
-            _my  = np.sum(_y)/_mask_sum
-            _cxx = np.sum((_x-_mx)*(_x-_mx))
-            _cxy = np.sum((_y-_my)*(_x-_mx))
-            _a1  = _cxy/_cxx
-            _a0  = _my - _mx*_a1
-            _resi  = _y - _a0 - _a1*_x
-            _rslt[i,0,_fill] = _resi
-        return _rslt
+            x = B1[fill]
+            y = B0[fill]
+            mx  = np.sum(x)/mask_sum
+            my  = np.sum(y)/mask_sum
+            cxx = np.sum((x-mx)*(x-mx))
+            cxy = np.sum((y-my)*(x-mx))
+            a1  = cxy/cxx
+            a0  = my - mx*a1
+            resi  = y - a0 - a1*x
+            rslt[i,0,fill] = resi
+        return rslt
         
     def purify_mono(self, maps):
         """purify function with customized maps input at single frequency
@@ -648,30 +639,29 @@ class abspipe(object):
             in shape (N_pix, ).
         """
         assert (maps.shape == (3,self._npix))
-        _mask_sum = np.sum(self._mask[0])
-        _pix_list = np.arange(self._npix)
-        _mflag = self._mask[0] < 1.
-        _fill = np.arange(self._npix)[np.where(self._mask[0] == 1)] # the pixel index of the available index
-        _rslt = np.zeros(self._npix,dtype=np.float64)
+        mask_sum = np.sum(self._mask[0])
+        pix_list = np.arange(self._npix)
+        fill = np.arange(self._npix)[np.where(self._mask[0]==1.)] # the pixel index of the available index
+        rslt = np.zeros(self._npix,dtype=np.float64)
         # process at each frequency
         # get the template of E to B leakage
-        _Alm0 = hp.map2alm(maps) #alms of the masked maps
-        _B0 = hp.alm2map(_Alm0[2],nside=self._nside,verbose=0)  # corrupted B map
-        _Alm0[0] = 0.
-        _Alm0[2] = 0.
-        _E0 = hp.alm2map(_Alm0,nside=self._nside,verbose=0)  # TQU of corrupted E mode only
-        _E0[:,_mflag] = 0.  # re-mask
-        _Alm1 = hp.map2alm(_E0)  # Alms of the TUQ from E-mode only
-        _B1 = hp.alm2map(_Alm1[2],nside=self._nside,verbose=0)  # template of EB leakage
+        Alm0 = hp.map2alm(maps) #alms of the masked maps
+        B0 = hp.alm2map(Alm0[2],nside=self._nside,verbose=0)  # corrupted B map
+        Alm0[0] = 0.
+        Alm0[2] = 0.
+        E0 = hp.alm2map(Alm0,nside=self._nside,verbose=0)  # TQU of corrupted E mode only
+        E0[:,self._mask[0]==0.] = 0.  # re-mask
+        Alm1 = hp.map2alm(E0)  # Alms of the TUQ from E-mode only
+        B1 = hp.alm2map(Alm1[2],nside=self._nside,verbose=0)  # template of EB leakage
         # compute the residual of linear fit
-        _x = _B1[_fill]
-        _y = _B0[_fill]
-        _mx  = np.sum(_x)/_mask_sum
-        _my  = np.sum(_y)/_mask_sum
-        _cxx = np.sum((_x-_mx)*(_x-_mx))
-        _cxy = np.sum((_y-_my)*(_x-_mx))
-        _a1  = _cxy/_cxx
-        _a0  = _my - _mx*_a1
-        _resi  = _y - _a0 - _a1*_x
-        _rslt[_fill] = _resi
-        return _rslt
+        x = B1[fill]
+        y = B0[fill]
+        mx  = np.sum(x)/mask_sum
+        my  = np.sum(y)/mask_sum
+        cxx = np.sum((x-mx)*(x-mx))
+        cxy = np.sum((y-my)*(x-mx))
+        a1  = cxy/cxx
+        a0  = my - mx*a1
+        resi  = y - a0 - a1*x
+        rslt[fill] = resi
+        return rslt

@@ -1,7 +1,7 @@
 import logging as log
 import numpy as np
 from afra.tools.icy_decorator import icy
-from afra.tools.aux import vec_simple, g_simple
+from afra.tools.aux import vec_simple
 from afra.tools.fg_models import fgmodel
 from afra.tools.bg_models import bgmodel
 import dynesty
@@ -31,7 +31,7 @@ class tpfit_simple(object):
 		already prepared in pipeline.
  	
     """
-    def __init__(self, signal, covariance, background, foreground):
+    def __init__(self, signal, covariance, background=None, foreground=None):
         log.debug('@ tpfit::__init__')
         # measurements
         self.signal = signal
@@ -39,9 +39,13 @@ class tpfit_simple(object):
         # parameters
         self.params = dict()
         self.param_range = dict()
+        # debug flag
+        self.debug = False
         # models
         self.background = background
         self.foreground = foreground
+        if (self._foreground is None and self._background is None):
+            raise ValueError('no activated model')
         
     @property
     def signal(self):
@@ -68,6 +72,10 @@ class tpfit_simple(object):
     def param_range(self):
         """active parameter range"""
         return self._param_range
+
+    @property
+    def debug(self):
+        return self._debug
         
     @signal.setter
     def signal(self, signal):
@@ -97,19 +105,30 @@ class tpfit_simple(object):
         
     @foreground.setter
     def foreground(self, foreground):
-        assert isinstance(foreground, fgmodel)
-        self._foreground = foreground
-        # update from model
-        self._params.update(self._foreground.params)
-        self._param_range.update(self._foreground.param_range)
+        if foreground is None:
+            self._foreground = None
+        else:
+            assert isinstance(foreground, fgmodel)
+            self._foreground = foreground
+            # update from model
+            self._params.update(self._foreground.params)
+            self._param_range.update(self._foreground.param_range)
         
     @background.setter
     def background(self, background):
-        assert isinstance(background, bgmodel)
-        self._background = background
-        # update from model
-        self._params.update(self._background.params)
-        self._param_range.update(self._background.param_range)
+        if background is None:
+            self._background = None
+        else:
+            assert isinstance(background, bgmodel)
+            self._background = background
+            # update from model
+            self._params.update(self._background.params)
+            self._param_range.update(self._background.param_range)
+
+    @debug.setter
+    def debug(self, debug):
+        assert isinstance(debug, bool)
+        self._debug = debug
 
     def rerange(self, pdict):
         assert isinstance(pdict, dict)
@@ -120,26 +139,21 @@ class tpfit_simple(object):
                 self._param_range.update({name: pdict[name]})
 
     def __call__(self, kwargs=dict()):
-        print ('\n template fitting kernel check list \n')
-        print ('# of parameters')
-        print (len(self.params))
-        print ('parameters')
-        print (self.params.keys())
-        print ('parameter range')
-        print (self.param_range)
-        print ('\n')
+        if self._debug:
+            print ('\n template fitting kernel check list \n')
+            print ('# of parameters')
+            print (len(self.params))
+            print ('parameters')
+            print (self.params.keys())
+            print ('parameter range')
+            print (self.param_range)
+            print ('\n')
         return self.run(kwargs)
         
     def run(self, kwargs=dict()):
         sampler = dynesty.NestedSampler(self._core_likelihood,self.prior,len(self._params),**kwargs)
         sampler.run_nested()
         return sampler.results 
-        """
-        results = pymultinest.solve(LogLikelihood=self._core_likelihood,
-                                    Prior=self.prior,
-                                    n_dims=len(self._params),
-                                    **kwargs)
-        """
         
     def _core_likelihood(self, cube):
         """
@@ -165,12 +179,17 @@ class tpfit_simple(object):
         for i in range(len(name_list)):
             name = name_list[i]
             tmp = self.unity_mapper(variable[i], self._param_range[name])
-            self._foreground.reset({name: tmp})
-            self._background.reset({name: tmp})
+            if self._foreground is not None:
+                self._foreground.reset({name: tmp})
+            if self._background is not None:
+                self._background.reset({name: tmp})
         # predict signal
-        log.debug('@ tpfit_pipeline::foreground reset', self._foreground.params)
-        log.debug('@ tpfit_pipeline::background reset', self._background.params)
-        return self.loglikeli(vec_simple(self._foreground.bandpower() + self._background.bandpower()))
+        if self._foreground is None:
+            return self.loglikeli(vec_simple(self._background.bandpower()))
+        elif self._background is None:
+            return self.loglikeli(vec_simple(self._foreground.bandpower()))
+        else:
+            return self.loglikeli(vec_simple(self._foreground.bandpower() + self._background.bandpower()))
         
     def loglikeli(self, predicted):
         """log-likelihood calculator
