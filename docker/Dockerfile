@@ -25,7 +25,7 @@ RUN ./configure --prefix=/usr/local/ && make && make install
 WORKDIR /home/lab
 
 RUN mkdir /home/lab/healpix
-RUN wget https://sourceforge.net/projects/healpix/files/Healpix_3.60/Healpix_3.60_2019Dec18.tar.gz && tar xzf Healpix_3.60_2019Dec18.tar.gz -C healpix --strip-components 1
+RUN wget https://sourceforge.net/projects/healpix/files/Healpix_3.70/Healpix_3.70_2020Jul23.tar.gz && tar xzf Healpix_3.70_2020Jul23.tar.gz -C healpix --strip-components 1
 WORKDIR /home/lab/healpix
 RUN ./configure --auto=cxx && make
 ENV LD_LIBRARY_PATH /usr/local/lib:/home/lab/healpix/lib:${LD_LIBRARY_PATH}
