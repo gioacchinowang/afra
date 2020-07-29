@@ -251,8 +251,8 @@ class abspipe(object):
                 for k in range(len(modes)):
                     signal_ps_t[k,i,j] = stmp[1][k]
                     signal_ps_t[k,j,i] = stmp[1][k]
-        # send PS to ABS method
-        spt_t = abssep(signal_ps_t,shift=shift,threshold=threshold)
+        # send PS to ABS method, noiseless case requires no shift nor threshold
+        spt_t = abssep(signal_ps_t,shift=None,threshold=None)
         if verbose:
             return (modes, spt_t.run(), spt_t.run_info())
         return (modes, spt_t.run())
@@ -359,9 +359,9 @@ class abspipe(object):
                     signal_ps_b[k,i,j] = stmp[2][k]
                     signal_ps_e[k,j,i] = stmp[1][k]
                     signal_ps_b[k,j,i] = stmp[2][k]
-        # send PS to ABS method
-        spt_e = abssep(signal_ps_e,shift=shift,threshold=threshold)
-        spt_b = abssep(signal_ps_b,shift=shift,threshold=threshold)
+        # send PS to ABS method, noiseless case requires no shift nor threshold
+        spt_e = abssep(signal_ps_e,shift=None,threshold=None)
+        spt_b = abssep(signal_ps_b,shift=None,threshold=None)
         if verbose:
             return (modes, spt_e.run(), spt_b.run(), spt_e.run_info(), spt_b.run_info())
         return (modes, spt_e.run(), spt_b.run())
@@ -489,8 +489,8 @@ class abspipe(object):
                 for k in range(len(modes)):
                     signal_ps_t[k,i,j] = stmp[1][k]
                     signal_ps_t[k,j,i] = stmp[1][k]
-        # send PS to ABS method
-        spt_t = abssep(signal_ps_t,shift=shift,threshold=threshold)
+        # send PS to ABS method, noiseless case requires no shift nor threshold
+        spt_t = abssep(signal_ps_t,shift=None,threshold=None)
         if verbose:
             return (modes, spt_t.run(), spt_t.run_info())
         return (modes, spt_t.run())

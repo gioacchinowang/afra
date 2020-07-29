@@ -21,7 +21,6 @@ for i in range(len(FREQ)):
     hp.write_map('pysm'+mname+'_'+str(FREQ[i])+'.fits',maps.astype(np.float32),dtype=np.float32)
 
 import camb
-from camb import model, initialpower
 
 #Set up a new set of parameters for CAMB
 pars = camb.CAMBparams()

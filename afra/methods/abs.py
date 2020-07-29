@@ -167,6 +167,7 @@ class abssep(object):
             # eigvec[:,i] corresponds to eigval[i]
             eigval, eigvec = np.linalg.eig(DL[ell])
             tmp = 0
+            assert (any(eigval > self._threshold))
             for i in range(self._fsize):
                 if self._threshold is None:
                     G = np.dot(f[ell], eigvec[:,i])
