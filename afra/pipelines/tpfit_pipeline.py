@@ -6,7 +6,7 @@ from afra.tools.bg_models import *
 from afra.tools.ps_estimator import pstimator
 from afra.tools.aux import vec_simple, oas_cov, bp_window
 from afra.tools.icy_decorator import icy
-from afra.methods.tpfit import tpfit_simple
+from afra.methods.tpfit import tpfit_simple, tpfit_hl
 
 
 @icy
@@ -82,10 +82,14 @@ class tpfpipe(object):
         self.foreground = foreground
         self.background = background
         # preprocess select dict with keys defined by (self._likelihood, self._nmap)
-        self._preprodict = {('simple',1): self.preprocess_simpleT,
-                            ('simple',2): self.preprocess_simpleB,
-                            ('hl',1): self.preprocess_hlT,
-                            ('hl',2): self.preprocess_hlB}
+        self._preprodict = {1: self.preprocess_T,
+                            2: self.preprocess_B}
+        # reprocess select dict with keys defined by (self._likelihood, self._nmap)
+        self._reprodict = {1: self.reprocess_T,
+                            2: self.reprocess_B}
+        # analyse select dict
+        self._anadict = {'simple': self.analyse_simple,
+                        'hl': self.analyse_hl}
         # ps estimator, to be assigned
         self._est = None
         # fiducial PS, to be assigned
@@ -356,8 +360,23 @@ class tpfpipe(object):
         # -> generate Dl_fid from fiducial CMB model
         # -> estimate M from noise
         """
-        x_hat, x_mat, _ = self.preprocess(aposcale,psbin,nsamp)
-        return self.analyse(x_hat,x_mat,kwargs)
+        x_hat, x_fid, x_mat, n_hat = self.preprocess(aposcale,psbin,nsamp)
+        return self.analyse(x_hat,x_fid,x_mat,kwargs)
+
+    def analyse(self,x_hat,x_fid,x_mat,kwargs):
+        return self._anadict[self._likelihood](x_hat,x_fid,x_mat,kwargs)
+
+    def analyse_simple(self,x_hat,x_fid,x_mat,kwargs):
+        engine = tpfit_simple(x_hat,x_mat,self._background,self._foreground)
+        if (len(self._param_range)):
+            engine.rerange(self._param_range)
+        return engine(kwargs)
+
+    def analyse_hl(self,x_hat,x_fid,x_mat,kwargs):
+        engine = tpfit_hl(x_hat,x_fid,x_mat,self._background,self._foreground)
+        if (len(self._param_range)):
+            engine.rerange(self._param_range)
+        return engine(kwargs)
 
     def preprocess(self,aposcale,psbin,nsamp):
         # prepare model, parameter list generated during init models
@@ -375,58 +394,9 @@ class tpfpipe(object):
         # prepare ps estimator
         self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin)
         # estimate X_hat and M
-        return self._preprodict[(self._likelihood,self._nmap)](nsamp)
+        return self._preprodict[self._nmap](nsamp)
 
-    def analyse(self,x_hat,x_mat,kwargs):
-        engine = tpfit_simple(x_hat,x_mat,self._background,self._foreground)
-        if (len(self._param_range)):
-            engine.rerange(self._param_range)
-        return engine(kwargs)
-
-    def preprocess_hlT(self,aposcale,psbin,nsamp):
-        pass
-
-    def preprocess_hlB(self,aposcale,psbin,nsamp):
-        pass
-
-    def reprocess(self,signals,nl_hat):
-        """
-        use new signal dict and pre-calculated noise level
-        to produce new x_hat
-        """
-        # read new signals dict
-        assert isinstance(signals, dict)
-        assert (self._freqs == list(signals.keys()))
-        assert (len(signals[next(iter(signals))].shape) == 2)
-        assert (self._nmap == signals[next(iter(signals))].shape[0])
-        assert (self._npix == signals[next(iter(signals))].shape[1])
-        new_signals = np.r_[[signals[x] for x in sorted(signals.keys())]]
-        #
-        modes = self._est.modes[self._psbin_offset:]  # angular modes
-        signal_ps = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
-        if (self._nmap == 1):
-            for i in range(self._nfreq):
-                tmp = self._est.auto_t(new_signals[i],fwhms=self._fwhms[i])
-                for k in range(len(modes)):
-                    signal_ps[k,i,i] = tmp[1][k+self._psbin_offset]
-                for j in range(i+1,self._nfreq):
-                    tmp = self._est.cross_t(np.r_[new_signals[i],new_signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
-                    for k in range(len(modes)):
-                        signal_ps[k,i,j] = tmp[1][k+self._psbin_offset]
-                        signal_ps[k,j,i] = tmp[1][k+self._psbin_offset]
-        elif (self._nmap == 2):
-            for i in range(self._nfreq):
-                tmp = self._est.auto_eb(new_signals[i],fwhms=self._fwhms[i])
-                for k in range(len(modes)):
-                    signal_ps[k,i,i] = tmp[2][k+self._psbin_offset]
-                for j in range(i+1,self._nfreq):
-                    tmp = self._est.cross_eb(np.r_[new_signals[i],new_signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
-                    for k in range(len(modes)):
-                        signal_ps[k,i,j] = tmp[2][k+self._psbin_offset]
-                        signal_ps[k,j,i] = tmp[2][k+self._psbin_offset]
-        return vec_simple(signal_ps) - nl_hat
-
-    def preprocess_simpleT(self,nsamp):
+    def preprocess_T(self,nsamp):
         """estimate measurements band power (vectorized) and its corresponding covariance matrix.
         
         Note that the 1st multipole bin is ignored.
@@ -483,11 +453,11 @@ class tpfpipe(object):
                         signal_ps_t[s,k,j,i] = stmp[1][k+self._psbin_offset]
         if self._debug:
             return ( signal_ps_t, noise_ps_t )
-        nl_hat = vec_simple( np.mean(noise_ps_t[1:],axis=0) )
-        xl_set = vec_simple(signal_ps_t) - nl_hat
-        return ( xl_set[0], oas_cov(xl_set[1:]), nl_hat )
+        nl_hat = np.mean(noise_ps_t[1:],axis=0)
+        dl_set = signal_ps_t - nl_hat
+        return ( dl_set[0], np.mean(dl_set[1:],axis=0), oas_cov(vec_simple(dl_set[1:])), nl_hat )
 
-    def preprocess_simpleB(self,nsamp):
+    def preprocess_B(self,nsamp):
         # run trial PS estimations for workspace template
         wsp_dict = dict()
         modes = self._est.modes[self._psbin_offset:]  # angular modes
@@ -547,6 +517,49 @@ class tpfpipe(object):
                         signal_ps_b[s,k,j,i] = stmp[2][k+self._psbin_offset]
         if self._debug:
             return ( signal_ps_b, noise_ps_b )
-        nl_hat = vec_simple( np.mean(noise_ps_b[1:],axis=0) )
-        xl_set = vec_simple(signal_ps_b) - nl_hat
-        return ( xl_set[0], oas_cov(xl_set[1:]), nl_hat )
+        nl_hat = np.mean(noise_ps_b[1:],axis=0)
+        dl_set = signal_ps_b - nl_hat
+        return ( dl_set[0], np.mean(dl_set[1:],axis=0), oas_cov(vec_simple(dl_set[1:])), nl_hat )
+
+    def reprocess(self,signals,nl_hat):
+        return self._reprodict[self._nmap](signals,nl_hat)
+        
+    def reprocess_T(self,signals,nl_hat):
+        pass
+        
+    def reprocess_B(self,signals,nl_hat):
+        """
+        use new signal dict and pre-calculated noise level
+        to produce new dl_hat
+        """
+        # read new signals dict
+        assert isinstance(signals, dict)
+        assert (self._freqs == list(signals.keys()))
+        assert (len(signals[next(iter(signals))].shape) == 2)
+        assert (self._nmap == signals[next(iter(signals))].shape[0])
+        assert (self._npix == signals[next(iter(signals))].shape[1])
+        new_signals = np.r_[[signals[x] for x in sorted(signals.keys())]]
+        #
+        modes = self._est.modes[self._psbin_offset:]  # angular modes
+        signal_ps = np.zeros((len(modes),self._nfreq,self._nfreq),dtype=np.float64)
+        if (self._nmap == 1):
+            for i in range(self._nfreq):
+                tmp = self._est.auto_t(new_signals[i],fwhms=self._fwhms[i])
+                for k in range(len(modes)):
+                    signal_ps[k,i,i] = tmp[1][k+self._psbin_offset]
+                for j in range(i+1,self._nfreq):
+                    tmp = self._est.cross_t(np.r_[new_signals[i],new_signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    for k in range(len(modes)):
+                        signal_ps[k,i,j] = tmp[1][k+self._psbin_offset]
+                        signal_ps[k,j,i] = tmp[1][k+self._psbin_offset]
+        elif (self._nmap == 2):
+            for i in range(self._nfreq):
+                tmp = self._est.auto_eb(new_signals[i],fwhms=self._fwhms[i])
+                for k in range(len(modes)):
+                    signal_ps[k,i,i] = tmp[2][k+self._psbin_offset]
+                for j in range(i+1,self._nfreq):
+                    tmp = self._est.cross_eb(np.r_[new_signals[i],new_signals[j]],fwhms=[self._fwhms[i],self._fwhms[j]])
+                    for k in range(len(modes)):
+                        signal_ps[k,i,j] = tmp[2][k+self._psbin_offset]
+                        signal_ps[k,j,i] = tmp[2][k+self._psbin_offset]
+        return signal_ps - nl_hat

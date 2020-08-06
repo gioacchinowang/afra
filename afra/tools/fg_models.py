@@ -282,6 +282,7 @@ class syncmodel(fgmodel):
                     f_ratio_j = (self._freqs[j]/ref)**beta_val_s
                     c_ratio_j = self.i2cmb(self._freqs[j],ref)
                     dl[l,i,j] = bp_s * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+                    dl[l,j,i] = dl[l,i,j]
         return dl
 
 
@@ -376,6 +377,7 @@ class dustmodel(fgmodel):
                     f_ratio_j = (self._freqs[j]/ref)**beta_val_d*self.bratio(self._freqs[j],ref)
                     c_ratio_j = self.i2cmb(self._freqs[j],ref)
                     dl[l,i,j] = bp_d * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+                    dl[l,j,i] = dl[l,i,j]
         return dl
 
 
@@ -486,4 +488,5 @@ class syncdustmodel(fgmodel):
                     dl[l,i,j] = bp_s * (f_ratio_is*c_ratio_is*f_ratio_js*c_ratio_js)
                     dl[l,i,j] += bp_d * (f_ratio_id*c_ratio_id*f_ratio_jd*c_ratio_jd)
                     dl[l,i,j] += rho * np.sqrt(bp_s*bp_d) * ( f_ratio_is*c_ratio_is*f_ratio_jd*c_ratio_jd + f_ratio_id*c_ratio_id*f_ratio_js*c_ratio_js  )
+                    dl[l,j,i] = dl[l,i,j]
         return dl

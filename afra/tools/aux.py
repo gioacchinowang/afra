@@ -1,6 +1,7 @@
 """auxiliary functions"""
 import numpy as np
 import healpy as hp
+from scipy.linalg import sqrtm
 from afra.tools.ps_estimator import pstimator
 
 
@@ -155,15 +156,36 @@ def oas_cov(sample):
     #
     rho = 1. if denominator == 0 else min(1., numerator / denominator)
     return (1. - rho) * s + np.eye(p) * rho * trs / p
-    
-    
+
+
+def unity_mapper(x, r=[0.,1.]):
+    """
+    Maps x from [0, 1] into the interval [a, b]
+
+    Parameters
+    ----------
+    x : float
+        the variable to be mapped
+    range : list,tuple
+        the lower and upper parameter value limits
+
+    Returns
+    -------
+    numpy.float64
+        The mapped parameter value
+    """
+    assert isinstance(r, (list,tuple))
+    assert (len(r) == 2)
+    return x * (r[1]-r[0]) + r[0]
+
+
 def vec_simple(cps):
     """vectorize cross-power-spectrum band power
     with repeated symetric elements trimed
-	
+
     Parameters
     ----------
-	
+
     cps : numpy.ndarray
         cross-PS with dimension (# sample, # modes, # freq, # freq)
         or                      (# modes, # freq, # freq)
@@ -195,6 +217,33 @@ def vec_simple(cps):
         raise ValueError('unsupported input shape')
 
 
+def vec_hl(cps,cps_hat,cps_fid):
+    """with measured cps_hat, fiducial cps_fid, modeled cps
+    """
+    assert isinstance(cps, np.ndarray)
+    assert (cps.shape[-1] == cps.shape[-2])
+    nfreq = cps.shape[-2]
+    nmode = cps.shape[-3]
+    dof = nfreq*(nfreq+1)//2
+    rslt = np.zeros(nmode*dof)
+    for l in range(cps.shape[0]):
+        c_h = cps_hat[l]
+        c_f = sqrtm(cps_fid[l])
+        c_inv = sqrtm(np.linalg.pinv(cps[l]))
+        res = np.dot(np.conjugate(c_inv), np.dot(c_h, c_inv))
+        [d, u] = np.linalg.eigh(res)
+        assert (all(d>=0))
+        # real symmetric matrices are diagnalized by orthogonal matrices (M^t M = 1)
+        # this makes a diagonal matrix by applying g(x) to the eigenvalues, equation 10 in Barkats et al
+        gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
+        # multiplying from right to left
+        x = np.dot(gd, np.dot(np.transpose(u),c_f))
+        x = np.dot(np.conjugate(c_f), np.dot(np.conjugate(u), x))
+        trimed = np.triu(x,k=0)
+        rslt[l*dof:(l+1)*dof] = trimed[trimed!=0]
+    return rslt
+
+
 def bp_window(ps_estimator,lmax,offset=1):
     """
     "top-hat" window function matrix 
@@ -223,6 +272,7 @@ def bp_window(ps_estimator,lmax,offset=1):
         compress[i,lrange] = w*factor
     return compress
 
+
 def Mbpconv_t(nside,mask=None,ensemble=10):
     """
     matrix for converting true PS to masked PS,
@@ -247,6 +297,7 @@ def Mbpconv_t(nside,mask=None,ensemble=10):
             cl_out += hp.anafast(intmap)
         result[:,l_pivot] = cl_out/ensemble
     return result
+
 
 def Mbpconv_eb(nside,mask=None,ensemble=10):
     """
