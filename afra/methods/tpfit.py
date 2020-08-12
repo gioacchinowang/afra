@@ -169,12 +169,11 @@ class tpfit_simple(object):
         if np.any(cube > 1.) or np.any(cube < 0.):
             log.debug('cube %s requested. returned most negative possible number' % str(cube))
             return np.nan_to_num(-np.inf)
-        variable = cube[:]
         # map variable to model parameters
         name_list = list(self._params.keys())
         for i in range(len(name_list)):
             name = name_list[i]
-            tmp = unity_mapper(variable[i], self._param_range[name])
+            tmp = unity_mapper(cube[i], self._param_range[name])
             if self._foreground is not None:
                 self._foreground.reset({name: tmp})
             if self._background is not None:
@@ -226,11 +225,12 @@ class tpfit_hl(object):
         foreground and background models in type {'model_name': model},
         already prepared in pipeline.
     """
-    def __init__(self, signal, fiducial, covariance, background=None, foreground=None):
+    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None):
         log.debug('@ tpfit::__init__')
         # measurements
         self.signal = signal
         self.fiducial = fiducial
+        self.noise = noise
         self.covariance = covariance
         # parameters
         self.params = dict()
@@ -250,6 +250,10 @@ class tpfit_hl(object):
     @property
     def fiducial(self):
         return self._fiducial
+
+    @property
+    def noise(self):
+        return self._noise
         
     @property
     def covariance(self):
@@ -290,6 +294,13 @@ class tpfit_hl(object):
         assert (len(fiducial.shape) == 3)
         self._fiducial = fiducial.copy()
         log.debug('cross-PS fiducial read')
+
+    @noise.setter
+    def noise(self, noise):
+        assert isinstance(noise, np.ndarray)
+        assert (len(noise.shape) == 3)
+        self._noise = noise.copy()
+        log.debug('cross-PS noise read')
         
     @covariance.setter
     def covariance(self, covariance):
@@ -380,12 +391,11 @@ class tpfit_hl(object):
         if np.any(cube > 1.) or np.any(cube < 0.):
             log.debug('cube %s requested. returned most negative possible number' % str(cube))
             return np.nan_to_num(-np.inf)
-        variable = cube[:]
         # map variable to model parameters
         name_list = list(self._params.keys())
         for i in range(len(name_list)):
             name = name_list[i]
-            tmp = unity_mapper(variable[i], self._param_range[name])
+            tmp = unity_mapper(cube[i], self._param_range[name])
             if self._foreground is not None:
                 self._foreground.reset({name: tmp})
             if self._background is not None:
@@ -408,7 +418,7 @@ class tpfit_hl(object):
             vectorized bandpower from models
         """
         assert (predicted.shape == self._signal.shape)
-        diff = vec_hl(predicted,self._signal,self._fiducial)
+        diff = vec_hl(predicted+self._noise,self._signal,self._fiducial)
         #(sign, logdet) = np.linalg.slogdet(cov*2.*np.pi)
         return -0.5*(np.vdot(diff, np.linalg.solve(self._covariance, diff.T)))  #+sign*logdet)
         

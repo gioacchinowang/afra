@@ -15,7 +15,7 @@ class pstimator(object):
     power-spectrum estimator using NaMaster
     """
 
-    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmax=None):
+    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmin=None, lmax=None):
         """
         Parameters
         ----------
@@ -38,9 +38,10 @@ class pstimator(object):
         self.nside = nside
         self.aposcale = aposcale
         self.psbin = psbin
+        self.lmin = lmin
         self.lmax = lmax
         self.mask = mask
-        self._b = nmt.NmtBin(nside=self._nside, nlb=self._psbin, is_Dell=True, lmax=self._lmax)
+        self._b = self.bands() 
         self._modes = self._b.get_effective_ells()
         
     @property
@@ -58,6 +59,10 @@ class pstimator(object):
     @property
     def psbin(self):
         return self._psbin
+
+    @property
+    def lmin(self):
+        return self._lmin
         
     @property
     def lmax(self):
@@ -100,6 +105,15 @@ class pstimator(object):
             assert isinstance(psbin, int)
             assert (psbin > 0)
             self._psbin = psbin
+
+    @lmin.setter
+    def lmin(self, lmin):
+        if lmin is None:
+            self._lmin = 2
+        else:
+            assert isinstance(lmin, int)
+            assert (lmin < 3*self._nside)
+            self._lmin = lmin
             
     @lmax.setter
     def lmax(self, lmax):
@@ -109,6 +123,16 @@ class pstimator(object):
             assert isinstance(lmax, int)
             assert (lmax < 3*self._nside)
             self._lmax = lmax
+
+    def bands(self):
+        ells = np.arange(3*self._nside, dtype='int32')  # Array of multipoles
+        weights = np.ones_like(ells)/self._psbin  # Array of weights
+        bpws = -1 + np.zeros_like(ells)  # Array of bandpower indices
+        i = 0
+        while self._psbin * (i + 1) + self._lmin < self._lmax:
+            bpws[self._psbin * i + self._lmin: self._psbin * (i+1) + self._lmin] = i
+            i += 1
+        return nmt.NmtBin(nside=self._nside, bpws=bpws, ells=ells, weights=weights, is_Dell=True)
         
     def auto_t(self, maps, wsp=None, fwhms=None):
         """

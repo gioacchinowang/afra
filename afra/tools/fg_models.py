@@ -21,17 +21,16 @@ from afra.tools.ps_estimator import pstimator
 @icy
 class fgmodel(object):
 
-    def __init__(self, freqs, nmap, mask, aposcale, psbin, templates=None, template_fwhms=None):
+    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
         self.freqs = freqs
         self.nmap = nmap
         self.mask = mask
         self.aposcale = aposcale
         self.psbin = psbin
-        self.psbin_offset = 1
         self.templates = templates
         self.template_fwhms = template_fwhms
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin)  # init PS estimator
-        self._modes = self._est.modes[self._psbin_offset:]  # discard 1st multipole bin
+        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax)  # init PS estimator
+        self._modes = self._est.modes  # discard 1st multipole bin
         self._params = dict()  # base class holds empty dict
         self._params_dft = dict()
         self._template_ps = dict()
@@ -108,10 +107,6 @@ class fgmodel(object):
     def template_ps(self):
         return self._template_ps
 
-    @property
-    def psbin_offset(self):
-        return self._psbin_offset
-
     @template_ps.setter
     def template_ps(self, template_ps):
         assert isinstance(template_ps, dict)
@@ -140,11 +135,6 @@ class fgmodel(object):
         self._mask = mask.copy()
         self._npix = mask.shape[1]
         self._nside = int(np.sqrt(self._npix//12))
-
-    @psbin_offset.setter
-    def psbin_offset(self, psbin_offset):
-        assert isinstance(psbin_offset, int)
-        self._psbin_offset = psbin_offset
 
     @templates.setter
     def templates(self, templates):
@@ -198,8 +188,8 @@ class fgmodel(object):
 @icy
 class syncmodel(fgmodel):
     
-    def __init__(self, freqs, nmap, mask, aposcale, psbin, templates=None, template_fwhms=None):
-        super(syncmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,templates,template_fwhms)
+    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
+        super(syncmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
         assert (self._template_nfreq == 1)
         # # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
@@ -207,9 +197,9 @@ class syncmodel(fgmodel):
         if self._template_flag:
             for ref in self._template_freqs:
                 if (self._nmap == 1):
-                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][self._psbin_offset:]
+                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1]
                 elif (self._nmap == 2):
-                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][self._psbin_offset:]
+                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2]
         else:
             raise ValueError('unimplemented feature')
     
@@ -289,8 +279,8 @@ class syncmodel(fgmodel):
 @icy
 class dustmodel(fgmodel):
    
-    def __init__(self, freqs, nmap, mask, aposcale, psbin, templates=None, template_fwhms=None):
-        super(dustmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,templates,template_fwhms)
+    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
+        super(dustmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
         assert (self._template_nfreq == 1)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
@@ -298,9 +288,9 @@ class dustmodel(fgmodel):
         if self._template_flag:
             for ref in self._template_freqs:
                 if (self._nmap == 1):
-                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][self._psbin_offset:]
+                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1]
                 elif (self._nmap == 2):
-                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][self._psbin_offset:]
+                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2]
         else:
             raise ValueError('unimplemented feature')
 
@@ -384,8 +374,8 @@ class dustmodel(fgmodel):
 @icy
 class syncdustmodel(fgmodel):
     
-    def __init__(self, freqs, nmap, mask, aposcale, psbin, templates=None, template_fwhms=None):
-        super(syncdustmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,templates,template_fwhms)
+    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
+        super(syncdustmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
         assert (self._template_nfreq == 2)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
@@ -393,9 +383,9 @@ class syncdustmodel(fgmodel):
         if self._template_flag:
             for ref in self._template_freqs:
                 if (self._nmap == 1):
-                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1][self._psbin_offset:]
+                    self.template_ps[ref] = self._est.auto_t(self._templates[ref],fwhms=self._template_fwhms[ref])[1]
                 elif (self._nmap == 2):
-                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2][self._psbin_offset:]
+                    self.template_ps[ref] = self._est.auto_eb(self._templates[ref],fwhms=self._template_fwhms[ref])[2]
         else:
             raise ValueError('unimplemented feature')
 

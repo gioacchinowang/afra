@@ -3,6 +3,9 @@ CMB models
 
 - cmbmodel
     cmb band-power model
+    
+- cambmodel
+    cmb band-power model with camb template
 """
 
 import logging as log
@@ -15,15 +18,14 @@ from afra.tools.aux import bp_window
 @icy
 class bgmodel(object):
     
-    def __init__(self, freqs, nmap, mask, aposcale, psbin):
+    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None):
         self.freqs = freqs
         self.nmap = nmap
         self.mask = mask
         self.aposcale = aposcale
         self.psbin = psbin
-        self.psbin_offset = 1  # discard 1st multipole bin
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin)  # init PS estimator
-        self._modes = self._est.modes[self._psbin_offset:]
+        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax)  # init PS estimator
+        self._modes = self._est.modes
         self._params = dict()  # base class holds empty dict
         self._params_dft = dict()
         self._templates = None  # template PS from camb
@@ -80,10 +82,6 @@ class bgmodel(object):
     def est(self):
         return self._est
 
-    @property
-    def psbin_offset(self):
-        return self._psbin_offset
-
     @freqs.setter
     def freqs(self, freqs):
         assert isinstance(freqs, (list,tuple))
@@ -101,11 +99,6 @@ class bgmodel(object):
     @psbin.setter
     def psbin(self, psbin):
         self._psbin = psbin
-
-    @psbin_offset.setter
-    def psbin_offset(self, psbin_offset):
-        assert isinstance(psbin_offset, int)
-        self._psbin_offset = psbin_offset
 
     @mask.setter
     def mask(self, mask):
@@ -125,8 +118,8 @@ class bgmodel(object):
 @icy
 class cmbmodel(bgmodel):
     
-    def __init__(self, freqs, nmap, mask, aposcale, psbin):
-        super(cmbmodel, self).__init__(freqs,nmap,mask,aposcale,psbin)
+    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None):
+        super(cmbmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,lmin,lmax)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
 
@@ -198,8 +191,8 @@ class cmbmodel(bgmodel):
 class cambmodel(bgmodel):
     """cmb model by camb"""
 
-    def __init__(self, freqs, nmap, mask, aposcale, psbin):
-        super(cambmodel, self).__init__(freqs,nmap,mask,aposcale,psbin)
+    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None):
+        super(cambmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,lmin,lmax)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
         # calculate camb template CMB PS with default parameters
@@ -207,7 +200,7 @@ class cambmodel(bgmodel):
         pars = camb.CAMBparams()
         pars.set_cosmology(H0=67.5,ombh2=0.022,omch2=0.122,mnu=0.06,omk=0,tau=0.06)
         pars.InitPower.set_params(As=2e-9,ns=0.965,r=0.05)
-        pars.set_for_lmax(2500,lens_potential_accuracy=1)
+        pars.set_for_lmax(max(2500,lmax),lens_potential_accuracy=1)
         pars.WantTensors = True
         results = camb.get_results(pars)
         self._templates = results.get_cmb_power_spectra(pars,CMB_unit='muK',raw_cl=True)
@@ -249,10 +242,10 @@ class cambmodel(bgmodel):
             synchrotron template reference frequency
         """
         if (self._nmap == 1):
-            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[0] + np.transpose(self._templates['tensor'])[0]*self._params['r']/0.05
+            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[0][lmin:lmax] + np.transpose(self._templates['tensor'])[0][lmin:lmax]*self._params['r']/0.05
         elif (self._nmap == 2):
-            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[2] + np.transpose(self._templates['tensor'])[2]*self._params['r']/0.05
-        fiducial_bp = bp_window(self._est,len(fiducial_cl),self._psbin_offset).dot(fiducial_cl)
+            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[2][lmin:lmax] + np.transpose(self._templates['tensor'])[2][lmin:lmax]*self._params['r']/0.05
+        fiducial_bp = bp_window(self._est).dot(fiducial_cl)
         bp_out = np.ones((len(self._modes),self._nfreq,self._nfreq))
         for l in range(len(self._modes)):
             bp_out[l] *= fiducial_bp[l]

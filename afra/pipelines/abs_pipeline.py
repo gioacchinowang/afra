@@ -16,7 +16,7 @@ class abspipe(object):
     - Jian Yao (STJU)
     - Jiaxin Wang (SJTU) jiaxin.wang@sjtu.edu.cn
     """
-    def __init__(self, signals, variances=None, mask=None, lmax=None, fwhms=None):
+    def __init__(self, signals, variances=None, mask=None, fwhms=None):
         """
         The ABS pipeline for extracting CMB power-spectrum band power,
         according to given measured sky maps at various frequency bands.
@@ -37,9 +37,6 @@ class abspipe(object):
             Single mask map,
             should be arranged in shape: (1, pixel #).
     
-        lmax : integer
-            Maximal multiple.
-            
         fwhms : list, tuple
             FWHM (in rad) of gaussian beams for each frequency
         """
@@ -49,7 +46,6 @@ class abspipe(object):
         self.variances = variances
         self.mask = mask
         #
-        self.lmax = lmax
         self.fwhms = fwhms
         # method select dict with keys defined by (self._noise_flag, self._nmap)
         self._methodict = {(True,1): self.method_noisyT,
@@ -96,22 +92,9 @@ class abspipe(object):
         return self._debug
         
     @property
-    def lmax(self):
-        return self._lmax
-        
-    @property
     def fwhms(self):
         return self._fwhms
-    
-    @lmax.setter
-    def lmax(self, lmax):
-        if lmax is None:
-            self._lmax = 2*self._nside
-        else:
-            assert isinstance(lmax, int)
-            assert (lmax < 3*self._nside)
-            self._lmax = lmax
-        
+
     @signals.setter
     def signals(self, signals):
         """detect and register nfreq, nmap, npix and nside automatically
@@ -177,8 +160,8 @@ class abspipe(object):
             assert (len(fwhms) == self._nfreq)
             self._fwhms = deepcopy(fwhms)
         log.debug('fwhms loaded')
-        
-    def __call__(self, aposcale, psbin, shift=None, threshold=None, verbose=False):
+
+    def __call__(self, aposcale, psbin, lmin=None, lmax=None, shift=None, threshold=None, verbose=False):
         """
         ABS pipeline class call function.
         
@@ -208,20 +191,20 @@ class abspipe(object):
         assert isinstance(psbin, int)
         assert (psbin > 0)
         assert (aposcale > 0)
-        return self.run(aposcale, psbin, shift, threshold, verbose)
+        return self.run(aposcale, psbin, lmin, lmax, shift, threshold, verbose)
         
-    def run(self, aposcale, psbin, shift, threshold, verbose=False):
+    def run(self, aposcale, psbin, lmin, lmax, shift, threshold, verbose=False):
         # init PS estimator
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)
+        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmin=lmin,lmax=lmax)
         # method selection
         return self._methodict[(self._noise_flag,self._nmap)](shift, threshold, verbose)
         
-    def run_bmode(self, aposcale, psbin, shift, threshold, verbose=False):
+    def run_bmode(self, aposcale, psbin, lmin, lmax, shift, threshold, verbose=False):
         """alternative routine for B mode only,
         with EB-leakage corrected before PS estimation,
         for pipeline test only"""
         # init PS estimator
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmax=self._lmax)
+        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmin=lmin,lmax=lmax)
         # method selection
         if self._noise_flag:
             return self.method_noisyB(shift, threshold, verbose)

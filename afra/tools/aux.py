@@ -232,19 +232,19 @@ def vec_hl(cps,cps_hat,cps_fid):
         c_inv = sqrtm(np.linalg.pinv(cps[l]))
         res = np.dot(np.conjugate(c_inv), np.dot(c_h, c_inv))
         [d, u] = np.linalg.eigh(res)
-        assert (all(d>=0))
+        #assert (all(d>=0))
         # real symmetric matrices are diagnalized by orthogonal matrices (M^t M = 1)
         # this makes a diagonal matrix by applying g(x) to the eigenvalues, equation 10 in Barkats et al
         gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
         # multiplying from right to left
         x = np.dot(gd, np.dot(np.transpose(u),c_f))
-        x = np.dot(np.conjugate(c_f), np.dot(np.conjugate(u), x))
+        x = np.dot(c_f, np.dot(u,x))
         trimed = np.triu(x,k=0)
         rslt[l*dof:(l+1)*dof] = trimed[trimed!=0]
     return rslt
 
 
-def bp_window(ps_estimator,lmax,offset=1):
+def bp_window(ps_estimator):
     """
     "top-hat" window function matrix 
     for converting PS into band-powers
@@ -254,21 +254,13 @@ def bp_window(ps_estimator,lmax,offset=1):
 
     ps_estimator
         the wrapped-in power-spectrum estimator
-
-    lmax : int
-        maximal multipole for Cl
-
-    offset : int
-        discard the first offset multipole bins
     """
     assert isinstance(ps_estimator, pstimator)
-    assert isinstance(lmax, int)
-    assert (lmax >= ps_estimator.lmax)
-    compress = np.zeros((len(ps_estimator.modes)-offset,lmax))
-    for i in range(len(ps_estimator.modes)-offset):
-        lrange = np.array(ps_estimator._b.get_ell_list(i+offset))
+    compress = np.zeros((len(ps_estimator.modes),ps_estimator.lmax-ps_estimator.lmin))
+    for i in range(len(ps_estimator.modes)):
+        lrange = np.array(ps_estimator._b.get_ell_list(i))[ps_estimator.lmin:ps_estimator.lmax]
         factor = 0.5*lrange*(lrange+1)/np.pi
-        w = np.array(ps_estimator._b.get_weight_list(i+offset))
+        w = np.array(ps_estimator._b.get_weight_list(i))[ps_estimator.lmin:ps_estimator.lmax]
         compress[i,lrange] = w*factor
     return compress
 

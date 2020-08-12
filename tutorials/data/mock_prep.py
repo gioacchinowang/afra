@@ -7,7 +7,6 @@ NSIDE = 128
 
 
 MODEL = ['s1','d1']  # pysm3 model name list
-FWHM = [0.5, 0.3, 0.2, 0.08]  # FWHM in deg for beam effect
 FREQ = [30, 95, 150, 353]
 
 sky = pysm.Sky(nside=NSIDE, preset_strings=MODEL)
@@ -17,7 +16,7 @@ for i in MODEL:
 for i in range(len(FREQ)):
     maps = sky.get_emission(FREQ[i]*u.GHz)
     maps = maps.to(u.uK_CMB, equivalencies=u.cmb_equivalencies(FREQ[i]*u.GHz))
-    maps = pysm.apply_smoothing_and_coord_transform(maps,fwhm=FWHM[i]*u.deg)
+    maps = pysm.apply_smoothing_and_coord_transform(maps,rot=hp.Rotator(coord=('G','C')))
     hp.write_map('pysm'+mname+'_'+str(FREQ[i])+'.fits',maps.astype(np.float32),dtype=np.float32)
 
 import camb
