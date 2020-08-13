@@ -200,7 +200,7 @@ class cambmodel(bgmodel):
         pars = camb.CAMBparams()
         pars.set_cosmology(H0=67.5,ombh2=0.022,omch2=0.122,mnu=0.06,omk=0,tau=0.06)
         pars.InitPower.set_params(As=2e-9,ns=0.965,r=0.05)
-        pars.set_for_lmax(max(2500,lmax),lens_potential_accuracy=1)
+        pars.set_for_lmax(4000,lens_potential_accuracy=1)
         pars.WantTensors = True
         results = camb.get_results(pars)
         self._templates = results.get_cmb_power_spectra(pars,CMB_unit='muK',raw_cl=True)
@@ -242,9 +242,9 @@ class cambmodel(bgmodel):
             synchrotron template reference frequency
         """
         if (self._nmap == 1):
-            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[0][lmin:lmax] + np.transpose(self._templates['tensor'])[0][lmin:lmax]*self._params['r']/0.05
+            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[0][:3*self._nside] + np.transpose(self._templates['tensor'])[0][:self._nside]*self._params['r']/0.05
         elif (self._nmap == 2):
-            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[2][lmin:lmax] + np.transpose(self._templates['tensor'])[2][lmin:lmax]*self._params['r']/0.05
+            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[2][:3*self._nside] + np.transpose(self._templates['tensor'])[2][:3*self._nside]*self._params['r']/0.05
         fiducial_bp = bp_window(self._est).dot(fiducial_cl)
         bp_out = np.ones((len(self._modes),self._nfreq,self._nfreq))
         for l in range(len(self._modes)):

@@ -256,11 +256,11 @@ def bp_window(ps_estimator):
         the wrapped-in power-spectrum estimator
     """
     assert isinstance(ps_estimator, pstimator)
-    compress = np.zeros((len(ps_estimator.modes),ps_estimator.lmax-ps_estimator.lmin))
+    compress = np.zeros((len(ps_estimator.modes),3*ps_estimator.nside))
     for i in range(len(ps_estimator.modes)):
-        lrange = np.array(ps_estimator._b.get_ell_list(i))[ps_estimator.lmin:ps_estimator.lmax]
+        lrange = np.array(ps_estimator._b.get_ell_list(i))
         factor = 0.5*lrange*(lrange+1)/np.pi
-        w = np.array(ps_estimator._b.get_weight_list(i))[ps_estimator.lmin:ps_estimator.lmax]
+        w = np.array(ps_estimator._b.get_weight_list(i))
         compress[i,lrange] = w*factor
     return compress
 
