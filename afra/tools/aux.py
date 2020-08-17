@@ -179,7 +179,7 @@ def unity_mapper(x, r=[0.,1.]):
     return x * (r[1]-r[0]) + r[0]
 
 
-def vec_simple(cps):
+def vec_gauss(cps):
     """vectorize cross-power-spectrum band power
     with repeated symetric elements trimed
 

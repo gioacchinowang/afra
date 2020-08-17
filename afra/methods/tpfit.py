@@ -1,14 +1,14 @@
 import logging as log
 import numpy as np
 from afra.tools.icy_decorator import icy
-from afra.tools.aux import unity_mapper, vec_simple, vec_hl
+from afra.tools.aux import unity_mapper, vec_gauss, vec_hl
 from afra.tools.fg_models import fgmodel
 from afra.tools.bg_models import bgmodel
 import dynesty
 
 
 @icy
-class tpfit_simple(object):
+class tpfit_gauss(object):
     """
     The template fitting class,
     symbol X stands for vectorized cross PS band power,
@@ -196,7 +196,7 @@ class tpfit_simple(object):
             vectorized bandpower from models
         """
         assert (predicted.shape == self._signal.shape)
-        diff = vec_simple( predicted - self._signal )
+        diff = vec_gauss( predicted - self._signal )
         #(sign, logdet) = np.linalg.slogdet(cov*2.*np.pi)
         return -0.5*(np.vdot(diff, np.linalg.solve(self._covariance, diff.T))) #+sign*logdet)
         

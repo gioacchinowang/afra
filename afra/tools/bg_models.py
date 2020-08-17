@@ -225,7 +225,7 @@ class cambmodel(bgmodel):
         {param name : [low limit, high limit]
         """
         prange = dict()
-        prange['r'] = [0.,0.1]
+        prange['r'] = [0.,1.]
         return prange
 
     def bandpower(self):

@@ -4,9 +4,9 @@ import healpy as hp
 from afra.tools.fg_models import * 
 from afra.tools.bg_models import * 
 from afra.tools.ps_estimator import pstimator
-from afra.tools.aux import vec_simple, oas_cov, unity_mapper
+from afra.tools.aux import vec_gauss, oas_cov, unity_mapper
 from afra.tools.icy_decorator import icy
-from afra.methods.tpfit import tpfit_simple, tpfit_hl
+from afra.methods.tpfit import tpfit_gauss, tpfit_hl
 
 
 @icy
@@ -26,7 +26,7 @@ class tpfpipe(object):
         foreground frequency scaling parameters
         foregorund cross-corr parameters
     """
-    def __init__(self, signals, variances, mask=None, fwhms=None, templates=None, template_fwhms=None, likelihood='simple', foreground=None, background=None):
+    def __init__(self, signals, variances, mask=None, fwhms=None, templates=None, template_fwhms=None, likelihood='gauss', foreground=None, background=None):
         """
         Parameters
         ----------
@@ -59,7 +59,7 @@ class tpfpipe(object):
             should be arranged in form: {frequency: fwhm}
 
         likelihood : string
-            likelihood type, can be either 'simple' or 'hl'.
+            likelihood type, can be either 'gauss' or 'hl'.
         """
         log.debug('@ tpfpipe::__init__')
         # measurements
@@ -87,7 +87,7 @@ class tpfpipe(object):
         self._reprodict = {1: self.reprocess_T,
                             2: self.reprocess_B}
         # analyse select dict
-        self._anadict = {'simple': self.analyse_simple,
+        self._anadict = {'gauss': self.analyse_gauss,
                         'hl': self.analyse_hl}
         # ps estimator, to be assigned
         self._est = None
@@ -346,9 +346,9 @@ class tpfpipe(object):
     def analyse(self,x_hat,x_fid,n_hat,x_mat,kwargs):
         return self._anadict[self._likelihood](x_hat,x_fid,n_hat,x_mat,kwargs)
 
-    def analyse_simple(self,x_hat,x_fid,n_hat,x_mat,kwargs):
-        # simple likelihood simplifies the usage of noise and fiducial model
-        engine = tpfit_simple(x_hat-n_hat,x_mat,self._background,self._foreground)
+    def analyse_gauss(self,x_hat,x_fid,n_hat,x_mat,kwargs):
+        # gauss likelihood simplifies the usage of noise and fiducial model
+        engine = tpfit_gauss(x_hat-n_hat,x_mat,self._background,self._foreground)
         if (len(self._param_range)):
             engine.rerange(self._param_range)
         result = engine(kwargs)
@@ -448,7 +448,7 @@ class tpfpipe(object):
                         signal_ps_t[s,k,j,i] = stmp[1][k]
         if self._debug:
             return ( signal_ps_t, noise_ps_t )
-        return ( signal_ps_t[0], np.mean(signal_ps_t[1:],axis=0), np.mean(noise_ps_t[1:],axis=0) ,oas_cov(vec_simple(signal_ps_t[1:])) )
+        return ( signal_ps_t[0], np.mean(signal_ps_t[1:],axis=0), np.mean(noise_ps_t[1:],axis=0) ,oas_cov(vec_gauss(signal_ps_t[1:])) )
 
     def preprocess_B(self,nsamp):
         # run trial PS estimations for workspace template
@@ -510,7 +510,7 @@ class tpfpipe(object):
                         signal_ps_b[s,k,j,i] = stmp[2][k]
         if self._debug:
             return ( signal_ps_b, noise_ps_b )
-        return ( signal_ps_b[0], np.mean(signal_ps_b[1:],axis=0), np.mean(noise_ps_b[1:],axis=0), oas_cov(vec_simple(signal_ps_b[1:])) )
+        return ( signal_ps_b[0], np.mean(signal_ps_b[1:],axis=0), np.mean(noise_ps_b[1:],axis=0), oas_cov(vec_gauss(signal_ps_b[1:])) )
 
     def reprocess(self,signals):
         return self._reprodict[self._nmap](signals)
