@@ -193,6 +193,7 @@ class cambmodel(bgmodel):
 
     def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None):
         super(cambmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,lmin,lmax)
+        assert (self._nmap == 2)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
         # calculate camb template CMB PS with default parameters
@@ -210,13 +211,13 @@ class cambmodel(bgmodel):
         """parameters are set as
         - "r", tensor-to-scalar ratio
         """
-        return ['r']
+        return ['r','Lb']
 
     @property
     def default(self):
         """register default parameter values
         """
-        return {'r': 0.05}
+        return {'r': 0.05, 'Lb': 1.}
 
     @property
     def param_range(self):
@@ -226,6 +227,7 @@ class cambmodel(bgmodel):
         """
         prange = dict()
         prange['r'] = [0.,1.]
+        prange['Lb'] = [0..,2.]
         return prange
 
     def bandpower(self):
@@ -241,10 +243,7 @@ class cambmodel(bgmodel):
         freq_ref : float
             synchrotron template reference frequency
         """
-        if (self._nmap == 1):
-            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[0][:3*self._nside] + np.transpose(self._templates['tensor'])[0][:self._nside]*self._params['r']/0.05
-        elif (self._nmap == 2):
-            fiducial_cl = np.transpose(self._templates['lensed_scalar'])[2][:3*self._nside] + np.transpose(self._templates['tensor'])[2][:3*self._nside]*self._params['r']/0.05
+        fiducial_cl = np.transpose(self._templates['lensed_scalar']*[1.,1.,self._params['Lb'],1.])[2][:3*self._nside] + np.transpose(self._templates['tensor']*[1.,1.,self._params['r']/0.05,1.])[2][:3*self._nside]
         fiducial_bp = bp_window(self._est).dot(fiducial_cl)
         bp_out = np.ones((len(self._modes),self._nfreq,self._nfreq))
         for l in range(len(self._modes)):

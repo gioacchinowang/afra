@@ -132,7 +132,7 @@ class pstimator(object):
         while self._psbin * (i + 1) + self._lmin < self._lmax:
             bpws[self._psbin * i + self._lmin: self._psbin * (i+1) + self._lmin] = i
             i += 1
-        return nmt.NmtBin(nside=self._nside, bpws=bpws, ells=ells, weights=weights, is_Dell=True)
+        return nmt.NmtBin(nside=self._nside, bpws=bpws, ells=ells, weights=weights, is_Dell=True, lmax=self._lmax)
         
     def auto_t(self, maps, wsp=None, fwhms=None):
         """

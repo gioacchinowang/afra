@@ -37,7 +37,7 @@ class abspipe(object):
             Single mask map,
             should be arranged in shape: (1, pixel #).
     
-        fwhms : list, tuple
+        fwhms : dict
             FWHM (in rad) of gaussian beams for each frequency
         """
         log.debug('@ abspipe::__init__')
@@ -150,15 +150,16 @@ class abspipe(object):
         assert isinstance(debug, bool)
         self._debug = debug
         log.debug('debug mode: %s' % str(self._debug))
-        
+
     @fwhms.setter
     def fwhms(self, fwhms):
-        if fwhms is None:
-            self._fwhms = [fwhms]*self._nfreq
+        """signal maps' fwhms"""
+        if fwhms is not None:
+            assert isinstance(fwhms, dict)
+            assert (len(fwhms.keys()) == self._nfreq)
+            self._fwhms = [fwhms[x] for x in sorted(fwhms.keys())]
         else:
-            assert isinstance(fwhms, (list,tuple))
-            assert (len(fwhms) == self._nfreq)
-            self._fwhms = deepcopy(fwhms)
+            self._fwhms = [None]*self._nfreq
         log.debug('fwhms loaded')
 
     def __call__(self, aposcale, psbin, lmin=None, lmax=None, shift=None, threshold=None, verbose=False):

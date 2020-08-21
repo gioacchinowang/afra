@@ -93,7 +93,9 @@ class tpfpipe(object):
         self._est = None
         # fiducial PS, to be assigned
         self._fiducial = None
-       
+        # Bayesian engine, to be assigned
+        self._engine = None
+
     @property
     def nmap(self):
         return self._nmap
@@ -348,27 +350,27 @@ class tpfpipe(object):
 
     def analyse_gauss(self,x_hat,x_fid,n_hat,x_mat,kwargs):
         # gauss likelihood simplifies the usage of noise and fiducial model
-        engine = tpfit_gauss(x_hat-n_hat,x_mat,self._background,self._foreground)
+        self._engine = tpfit_gauss(x_hat-n_hat,x_mat,self._background,self._foreground)
         if (len(self._param_range)):
-            engine.rerange(self._param_range)
-        result = engine(kwargs)
+            self._engine.rerange(self._param_range)
+        result = self._engine(kwargs)
         # rescale variables to parameters
-        names = list(engine.param_range.keys())
+        names = list(self._engine.param_range.keys())
         for i in range(len(names)):
-            low, high = engine.param_range[names[i]]
+            low, high = self._engine.param_range[names[i]]
             for j in range(result.samples.shape[0]):
                 result.samples[j, i] = unity_mapper(result.samples[j, i], [low, high])
         return result
 
     def analyse_hl(self,x_hat,x_fid,n_hat,x_mat,kwargs):
-        engine = tpfit_hl(x_hat,x_fid,n_hat,x_mat,self._background,self._foreground)
+        self._engine = tpfit_hl(x_hat,x_fid,n_hat,x_mat,self._background,self._foreground)
         if (len(self._param_range)):
-            engine.rerange(self._param_range)
-        result = engine(kwargs)
+            self._engine.rerange(self._param_range)
+        result = self._engine(kwargs)
         # rescale variables to parameters
-        names = list(engine.param_range.keys())
+        names = list(self._engine.param_range.keys())
         for i in range(len(names)):
-            low, high = engine.param_range[names[i]]
+            low, high = self._engine.param_range[names[i]]
             for j in range(result.samples.shape[0]):
                 result.samples[j, i] = unity_mapper(result.samples[j, i], [low, high])
         return result
