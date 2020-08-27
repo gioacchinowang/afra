@@ -1,4 +1,3 @@
-import logging as log
 import numpy as np
 from afra.tools.icy_decorator import icy
 
@@ -42,37 +41,33 @@ class abssep(object):
             If None, no threshold is taken.
             The threshold of signal to noise ratio, for information extraction.
         """
-        log.debug('@ abs::__init__')
-        #
         self.signal = signal
         self.noise = noise
         self.sigma = sigma
-        #
         self.shift = shift
         self.threshold = threshold
-        #
         self.noise_flag = not (self._noise is None or self._sigma is None)
-        
+
     @property
     def signal(self):
         return self._signal
-    
+
     @property
     def noise(self):
         return self._noise
-    
+
     @property
     def sigma(self):
         return self._sigma
-    
+
     @property
     def shift(self):
         return self._shift
-    
+
     @property
     def threshold(self):
         return self._threshold
-        
+
     @property
     def noise_flag(self):
         return self._noise_flag
@@ -84,33 +79,28 @@ class abssep(object):
         self._fsize = signal.shape[1]  # number of frequency bands
         assert (signal.shape[1] == signal.shape[2])
         self._signal = signal.copy()
-        log.debug('signal cross-PS read')
-        
+
     @noise.setter
     def noise(self, noise):
         if noise is None:
             self._noise = None
-            log.debug('without noise cross-PS')
         else:
             assert isinstance(noise, np.ndarray)
             assert (noise.shape[0] == self._lsize)
             assert (noise.shape[1] == self._fsize)
             assert (noise.shape[1] == noise.shape[2])
             self._noise = noise.copy()
-            log.debug('noise cross-PS read')
-        
+
     @sigma.setter
     def sigma(self, sigma):
         if sigma is None:
             self._sigma = None
-            log.debug('without noise RMS')
         else:
             assert isinstance(sigma, np.ndarray)
             assert (sigma.shape[0] == self._lsize)
             assert (sigma.shape[1] == self._fsize)
             self._sigma = sigma.copy()
-            log.debug('noise RMS auto-PS read')
-     
+
     @shift.setter
     def shift(self, shift):
         if shift is not None:
@@ -119,34 +109,18 @@ class abssep(object):
             self._shift = shift.copy()
         else:
             self._shift = np.zeros(self._lsize)
-        log.debug('PS power shift set: %s' % str(self._shift))
-        
+
     @threshold.setter
     def threshold(self, threshold):
         if threshold is not None:
             assert isinstance(threshold, float)
         self._threshold = threshold
-        log.debug('signal to noise threshold: %s' % str(self._threshold))
-        
+
     @noise_flag.setter
     def noise_flag(self, noise_flag):
         assert isinstance(noise_flag, bool)
         self._noise_flag = noise_flag
-        log.debug('ABS with noise? %s' % str(self._noise_flag))
-    
-    def __call__(self):
-        """
-        ABS separator class call function.
-        
-        Returns
-        -------
-        
-        BL : numpy.ndarray
-            CMB angular power spectrum band power
-        """
-        log.debug('@ abs::__call__')
-        return self.run()
-        
+
     def run(self):
         # binned average, converted to band power
         DL = self._signal.copy()
@@ -179,7 +153,7 @@ class abssep(object):
                         tmp += (G**2/eigval[i])
             BL[ell] = (1.0/tmp - self._shift[ell])
         return BL
-        
+
     def run_info(self):
         # binned average, converted to band power
         DL = self._signal.copy()
@@ -201,4 +175,3 @@ class abssep(object):
             eigval, eigvec = np.linalg.eig(DL[ell])
             info[ell] = (eigval, eigvec)
         return info
-        

@@ -1,4 +1,3 @@
-import logging as log
 import numpy as np
 from afra.tools.icy_decorator import icy
 from afra.tools.aux import unity_mapper, vec_gauss, vec_hl
@@ -10,25 +9,23 @@ import dynesty
 @icy
 class tpfit_gauss(object):
     """
-    The template fitting class,
-    symbol X stands for vectorized cross PS band power,
-    which is arranged in EE, BB ordering
-    ions of cosmic acceleration for both flat and nonflat PAge universes. In the nonflat case, we find a ≳3σ tension between the spatial curvatures derive
-    Parameters
-    ----------
-    
-    signal : numpy.ndarray
-        vectorized signal cross PS bandpower in shape (# mode, # freq, # freq)
-        
-    covariance : numpy.ndarray
-        covariance matrix for vectorized signal in shape (# X, # X)
-        
-    model : dict
-        foreground and background models in type {'model_name': model},
-        already prepared in pipeline.
+    The template fitting class, symbol X stands for vectorized cross PS band power.
     """
     def __init__(self, signal, covariance, background=None, foreground=None):
-        log.debug('@ tpfit::__init__')
+        """
+        Parameters
+        ----------
+        
+        signal : numpy.ndarray
+            vectorized signal cross PS bandpower in shape (# mode, # freq, # freq)
+        
+        covariance : numpy.ndarray
+            covariance matrix for vectorized signal in shape (# X, # X)
+        
+        model : dict
+            foreground and background models in type {'model_name': model},
+            already prepared in pipeline.
+        """
         # measurements
         self.signal = signal
         self.covariance = covariance
@@ -42,11 +39,11 @@ class tpfit_gauss(object):
         self.foreground = foreground
         if (self._foreground is None and self._background is None):
             raise ValueError('no activated model')
-        
+
     @property
     def signal(self):
         return self._signal
-        
+
     @property
     def covariance(self):
         return self._covariance
@@ -58,12 +55,12 @@ class tpfit_gauss(object):
     @property
     def background(self):
         return self._background
-        
+
     @property
     def params(self):
         """active parameter name list"""
         return self._params
-        
+
     @property
     def param_range(self):
         """active parameter range"""
@@ -72,14 +69,13 @@ class tpfit_gauss(object):
     @property
     def debug(self):
         return self._debug
-        
+
     @signal.setter
     def signal(self, signal):
         assert isinstance(signal, np.ndarray)
         assert (len(signal.shape) == 3)
         self._signal = signal.copy()  # signal matrix
-        log.debug('cross-PS signal read')
-        
+
     @covariance.setter
     def covariance(self, covariance):
         assert isinstance(covariance, np.ndarray)
@@ -87,18 +83,17 @@ class tpfit_gauss(object):
         assert (covariance.shape[0] == covariance.shape[1])
         assert (np.linalg.matrix_rank(covariance) == covariance.shape[0])
         self._covariance = covariance.copy()  # vectorized cov matrix
-        log.debug('cross-PS cov read')
-        
+
     @params.setter
     def params(self, params):
         assert isinstance(params, dict)
         self._params = params
-        
+
     @param_range.setter
     def param_range(self, param_range):
         assert isinstance(param_range, dict)
         self._param_range = param_range
-        
+
     @foreground.setter
     def foreground(self, foreground):
         if foreground is None:
@@ -109,7 +104,7 @@ class tpfit_gauss(object):
             # update from model
             self._params.update(self._foreground.params)
             self._param_range.update(self._foreground.param_range)
-        
+
     @background.setter
     def background(self, background):
         if background is None:
@@ -134,7 +129,7 @@ class tpfit_gauss(object):
                 assert (len(pdict[name]) == 2)
                 self._param_range.update({name: pdict[name]})
 
-    def __call__(self, kwargs=dict()):
+    def run(self, kwargs=dict()):
         if self._debug:
             print ('\n template fitting kernel check list \n')
             print ('# of parameters')
@@ -144,13 +139,10 @@ class tpfit_gauss(object):
             print ('parameter range')
             print (self.param_range)
             print ('\n')
-        return self.run(kwargs)
-        
-    def run(self, kwargs=dict()):
         sampler = dynesty.NestedSampler(self._core_likelihood,self.prior,len(self._params),**kwargs)
         sampler.run_nested()
         return sampler.results 
-        
+
     def _core_likelihood(self, cube):
         """
         core log-likelihood calculator
@@ -164,10 +156,8 @@ class tpfit_gauss(object):
         -------
         log-likelihood value
         """
-        log.debug('@ tpfit_pipeline::_core_likelihood')
         # security boundary check
         if np.any(cube > 1.) or np.any(cube < 0.):
-            log.debug('cube %s requested. returned most negative possible number' % str(cube))
             return np.nan_to_num(-np.inf)
         # map variable to model parameters
         name_list = list(self._params.keys())
@@ -185,13 +175,13 @@ class tpfit_gauss(object):
             return self.loglikeli(self._foreground.bandpower())
         else:
             return self.loglikeli(self._foreground.bandpower() + self._background.bandpower())
-        
+
     def loglikeli(self, predicted):
         """log-likelihood calculator
-
+        
         Parameters
         ----------
-
+        
         predicted : numpy.ndarray
             vectorized bandpower from models
         """
@@ -199,7 +189,7 @@ class tpfit_gauss(object):
         diff = vec_gauss( predicted - self._signal )
         #(sign, logdet) = np.linalg.slogdet(cov*2.*np.pi)
         return -0.5*(np.vdot(diff, np.linalg.solve(self._covariance, diff.T))) #+sign*logdet)
-        
+
     def prior(self, cube):
         """flat prior"""
         return cube
@@ -207,26 +197,8 @@ class tpfit_gauss(object):
 
 @icy
 class tpfit_hl(object):
-    """
-    The template fitting class,
-    symbol X stands for vectorized cross PS band power,
-    which is arranged in EE, BB ordering
-    ions of cosmic acceleration for both flat and nonflat PAge universes. In the nonflat case, we find a ≳3σ tension between the spatial curvatures derive
-    Parameters
-    ----------
-    
-    signal : numpy.ndarray
-        vectorized signal cross PS bandpower in shape (# l, # freq, # freq)
-        
-    covariance : numpy.ndarray
-        covariance matrix for vectorized signal in shape (# X, # X)
-        
-    model : dict
-        foreground and background models in type {'model_name': model},
-        already prepared in pipeline.
-    """
+ 
     def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None):
-        log.debug('@ tpfit::__init__')
         # measurements
         self.signal = signal
         self.fiducial = fiducial
@@ -242,7 +214,7 @@ class tpfit_hl(object):
         self.foreground = foreground
         if (self._foreground is None and self._background is None):
             raise ValueError('no activated model')
-        
+
     @property
     def signal(self):
         return self._signal
@@ -254,7 +226,7 @@ class tpfit_hl(object):
     @property
     def noise(self):
         return self._noise
-        
+
     @property
     def covariance(self):
         return self._covariance
@@ -266,12 +238,12 @@ class tpfit_hl(object):
     @property
     def background(self):
         return self._background
-        
+
     @property
     def params(self):
         """active parameter name list"""
         return self._params
-        
+
     @property
     def param_range(self):
         """active parameter range"""
@@ -280,28 +252,25 @@ class tpfit_hl(object):
     @property
     def debug(self):
         return self._debug
-        
+
     @signal.setter
     def signal(self, signal):
         assert isinstance(signal, np.ndarray)
         assert (len(signal.shape) == 3)
         self._signal = signal.copy()  # vectorized signal matrix
-        log.debug('cross-PS signal read')
 
     @fiducial.setter
     def fiducial(self, fiducial):
         assert isinstance(fiducial, np.ndarray)
         assert (len(fiducial.shape) == 3)
         self._fiducial = fiducial.copy()
-        log.debug('cross-PS fiducial read')
 
     @noise.setter
     def noise(self, noise):
         assert isinstance(noise, np.ndarray)
         assert (len(noise.shape) == 3)
         self._noise = noise.copy()
-        log.debug('cross-PS noise read')
-        
+
     @covariance.setter
     def covariance(self, covariance):
         assert isinstance(covariance, np.ndarray)
@@ -309,18 +278,17 @@ class tpfit_hl(object):
         assert (covariance.shape[0] == covariance.shape[1])
         assert (np.linalg.matrix_rank(covariance) == covariance.shape[0])
         self._covariance = covariance.copy()  # vectorized cov matrix
-        log.debug('cross-PS cov read')
-        
+
     @params.setter
     def params(self, params):
         assert isinstance(params, dict)
         self._params = params
-        
+
     @param_range.setter
     def param_range(self, param_range):
         assert isinstance(param_range, dict)
         self._param_range = param_range
-        
+
     @foreground.setter
     def foreground(self, foreground):
         if foreground is None:
@@ -331,7 +299,7 @@ class tpfit_hl(object):
             # update from model
             self._params.update(self._foreground.params)
             self._param_range.update(self._foreground.param_range)
-        
+
     @background.setter
     def background(self, background):
         if background is None:
@@ -356,7 +324,7 @@ class tpfit_hl(object):
                 assert (len(pdict[name]) == 2)
                 self._param_range.update({name: pdict[name]})
 
-    def __call__(self, kwargs=dict()):
+    def run(self, kwargs=dict()):
         if self._debug:
             print ('\n template fitting kernel check list \n')
             print ('# of parameters')
@@ -366,30 +334,25 @@ class tpfit_hl(object):
             print ('parameter range')
             print (self.param_range)
             print ('\n')
-        return self.run(kwargs)
-        
-    def run(self, kwargs=dict()):
         sampler = dynesty.NestedSampler(self._core_likelihood,self.prior,len(self._params),**kwargs)
         sampler.run_nested()
         return sampler.results 
-        
+
     def _core_likelihood(self, cube):
         """
         core log-likelihood calculator
-
+        
         Parameters
         ----------
         cube
             list of variable values
-
+        
         Returns
         -------
         log-likelihood value
         """
-        log.debug('@ tpfit_pipeline::_core_likelihood')
         # security boundary check
         if np.any(cube > 1.) or np.any(cube < 0.):
-            log.debug('cube %s requested. returned most negative possible number' % str(cube))
             return np.nan_to_num(-np.inf)
         # map variable to model parameters
         name_list = list(self._params.keys())
@@ -407,13 +370,13 @@ class tpfit_hl(object):
             return self.loglikeli(self._foreground.bandpower())
         else:
             return self.loglikeli(self._foreground.bandpower() + self._background.bandpower())
-        
+
     def loglikeli(self, predicted):
         """log-likelihood calculator
-
+        
         Parameters
         ----------
-
+        
         predicted : numpy.ndarray
             vectorized bandpower from models
         """
@@ -421,7 +384,7 @@ class tpfit_hl(object):
         diff = vec_hl(predicted+self._noise,self._signal,self._fiducial)
         #(sign, logdet) = np.linalg.slogdet(cov*2.*np.pi)
         return -0.5*(np.vdot(diff, np.linalg.solve(self._covariance, diff.T)))  #+sign*logdet)
-        
+
     def prior(self, cube):
         """flat prior"""
         return cube

@@ -7,8 +7,6 @@ CMB models
 - cambmodel
     cmb band-power model with camb template
 """
-
-import logging as log
 import numpy as np
 from afra.tools.icy_decorator import icy
 from afra.tools.ps_estimator import pstimator
@@ -17,30 +15,30 @@ from afra.tools.aux import bp_window
 
 @icy
 class bgmodel(object):
-    
-    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None):
-        self.freqs = freqs
-        self.nmap = nmap
+
+    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None):
+        self.freqlist = freqlist
+        self.target = target
         self.mask = mask
         self.aposcale = aposcale
         self.psbin = psbin
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax)  # init PS estimator
+        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax,target=self._target)  # init PS estimator
         self._modes = self._est.modes
         self._params = dict()  # base class holds empty dict
         self._params_dft = dict()
         self._templates = None  # template PS from camb
 
     @property
-    def freqs(self):
-        return self._freqs
+    def freqlist(self):
+        return self._freqlist
 
     @property
     def nfreq(self):
         return self._nfreq
 
     @property
-    def nmap(self):
-        return self._nmap
+    def target(self):
+        return self._target
 
     @property
     def modes(self):
@@ -82,15 +80,16 @@ class bgmodel(object):
     def est(self):
         return self._est
 
-    @freqs.setter
-    def freqs(self, freqs):
-        assert isinstance(freqs, (list,tuple))
-        self._freqs = freqs
-        self._nfreq = len(self._freqs)
+    @freqlist.setter
+    def freqlist(self, freqlist):
+        assert isinstance(freqlist, (list,tuple))
+        self._freqlist = freqlist
+        self._nfreq = len(self._freqlist)
 
-    @nmap.setter
-    def nmap(self, nmap):
-        self._nmap = nmap
+    @target.setter
+    def target(self, target):
+        assert isinstance(target, str)
+        self._target = target
 
     @aposcale.setter
     def aposcale(self, aposcale):
@@ -104,7 +103,7 @@ class bgmodel(object):
     def mask(self, mask):
         assert isinstance(mask, np.ndarray)
         self._mask = mask.copy()
-        self._npix = mask.shape[1]
+        self._npix = len(mask)
         self._nside = int(np.sqrt(self._npix//12))
 
     def reset(self, pdict):
@@ -118,8 +117,8 @@ class bgmodel(object):
 @icy
 class cmbmodel(bgmodel):
     
-    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None):
-        super(cmbmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,lmin,lmax)
+    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None):
+        super(cmbmodel, self).__init__(freqlist,target,mask,aposcale,psbin,lmin,lmax)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
 
@@ -129,15 +128,10 @@ class cmbmodel(bgmodel):
         - bandpower "bp_c_x", exponential index of amplitude
         """
         plist = list()
-        if (self._nmap == 1):
-            name = ['bp_c_T_']
-        elif (self._nmap == 2):
-            name = ['bp_c_B_']
-        else:
-            raise ValueError('unsupported nmap')
-        for i in range(len(name)):
+        prefix = ['bp_c_'+self._target+'_']
+        for i in prefix:
             for j in range(len(self._modes)):
-                plist.append(name[i]+str(self._modes[j]))
+                plist.append(i+str(self._modes[j]))
         return plist
         
     @property
@@ -175,25 +169,18 @@ class cmbmodel(bgmodel):
         freq_ref : float
             synchrotron template reference frequency
         """
-        if self._nmap == 1:
-            bp_t = np.ones((len(self._modes),self._nfreq,self._nfreq))
-            for l in range(len(self._modes)):
-                bp_t[l] *= self._params['bp_c_T_'+str(self._modes[l])]
-            return bp_t
-        if self._nmap == 2:
-            bp_b = np.ones((len(self._modes),self._nfreq,self._nfreq))
-            for l in range(len(self._modes)):
-                bp_b[l] *= self._params['bp_c_B_'+str(self._modes[l])]
-            return bp_b
+        bp = np.ones((len(self._modes),self._nfreq,self._nfreq))
+        for l in range(len(self._modes)):
+            bp[l] *= self._params['bp_c_'+self._target+'_'+str(self._modes[l])]
+        return bp
 
 
 @icy
 class cambmodel(bgmodel):
     """cmb model by camb"""
 
-    def __init__(self, freqs, nmap, mask, aposcale, psbin, lmin=None, lmax=None):
-        super(cambmodel, self).__init__(freqs,nmap,mask,aposcale,psbin,lmin,lmax)
-        assert (self._nmap == 2)
+    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None):
+        super(cambmodel, self).__init__(freqlist,target,mask,aposcale,psbin,lmin,lmax)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
         # calculate camb template CMB PS with default parameters
@@ -227,23 +214,15 @@ class cambmodel(bgmodel):
         """
         prange = dict()
         prange['r'] = [0.,1.]
-        prange['Lb'] = [0..,2.]
+        prange['Lb'] = [0.,2.]
         return prange
 
     def bandpower(self):
         """cross-(frequency)-power-spectrum
         in shape (ell #, freq #, freq #)
-
-        Parameters
-        ----------
-
-        freq_list : float
-            list of frequency in GHz
-
-        freq_ref : float
-            synchrotron template reference frequency
         """
-        fiducial_cl = np.transpose(self._templates['lensed_scalar']*[1.,1.,self._params['Lb'],1.])[2][:3*self._nside] + np.transpose(self._templates['tensor']*[1.,1.,self._params['r']/0.05,1.])[2][:3*self._nside]
+        enum = {'T':0,'E':1,'B':2}
+        fiducial_cl = np.transpose(self._templates['lensed_scalar']*[1.,1.,self._params['Lb'],1.])[enum[self._target]][:3*self._nside] + np.transpose(self._templates['tensor']*[1.,1.,self._params['r']/0.05,1.])[enum[self._target]][:3*self._nside]
         fiducial_bp = bp_window(self._est).dot(fiducial_cl)
         bp_out = np.ones((len(self._modes),self._nfreq,self._nfreq))
         for l in range(len(self._modes)):

@@ -14,10 +14,10 @@ def binell(modes, bins):
     
     modes : list
         Input angular mode list.
-        
+    
     bins : integer
         Output angular mode bin number.
-        
+    
     Return
     ------
     
@@ -35,7 +35,7 @@ def binell(modes, bins):
         end = min(lres,i) + (i+1)*lmod + int(i < lres)
         result.append(0.5*(modes[begin]+modes[end-1]))
     return result
-    
+
 
 def bincps(cps, modes, bins):
     """
@@ -46,10 +46,10 @@ def bincps(cps, modes, bins):
     
     cps : numpy.ndarray
         Cross power spectrum in shape (N_ell, N_freq, N_freq).
-        
+    
     modes : list
         Input angular mode list.
-        
+    
     bins : integer
         Output angular mode bin number.
     
@@ -88,10 +88,10 @@ def binaps(aps, modes, bins):
     
     aps : numpy.ndarray
         Auto power spectrum in shape (N_ell, N_freq).
-        
+    
     modes : list
         Input angular mode list.
-        
+    
     bins : integer
         Output angular mode bin number.
     
@@ -117,7 +117,7 @@ def binaps(aps, modes, bins):
         effl = 0.5*(modes[begin]+modes[end-1])
         result[i,:] = np.mean(aps_cp[begin:end,:], axis=0)*0.5*effl*(effl+1)/np.pi
     return result
-   
+
 
 def oas_cov(sample):
     """
@@ -127,9 +127,10 @@ def oas_cov(sample):
     ----------
     sample : numpy.ndarray
         ensemble of observables, in shape (# ensemble,# data)
-        
+    
     Returns
     -------
+    
     covariance matrix : numpy.ndarray
         covariance matrix in shape (data_size,data_size)
     """
@@ -161,16 +162,17 @@ def oas_cov(sample):
 def unity_mapper(x, r=[0.,1.]):
     """
     Maps x from [0, 1] into the interval [a, b]
-
+    
     Parameters
     ----------
     x : float
         the variable to be mapped
     range : list,tuple
         the lower and upper parameter value limits
-
+    
     Returns
     -------
+    
     numpy.float64
         The mapped parameter value
     """
@@ -182,16 +184,17 @@ def unity_mapper(x, r=[0.,1.]):
 def vec_gauss(cps):
     """vectorize cross-power-spectrum band power
     with repeated symetric elements trimed
-
+    
     Parameters
     ----------
-
+    
     cps : numpy.ndarray
         cross-PS with dimension (# sample, # modes, # freq, # freq)
         or                      (# modes, # freq, # freq)
-
+    
     Returns
     -------
+    
     vectorized cps : numpy.ndarray
     """
     assert isinstance(cps, np.ndarray)
@@ -248,10 +251,10 @@ def bp_window(ps_estimator):
     """
     "top-hat" window function matrix 
     for converting PS into band-powers
-
+    
     Parameters
     ----------
-
+    
     ps_estimator
         the wrapped-in power-spectrum estimator
     """
