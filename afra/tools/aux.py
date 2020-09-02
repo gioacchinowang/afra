@@ -1,122 +1,9 @@
 """auxiliary functions"""
+
 import numpy as np
 import healpy as hp
 from scipy.linalg import sqrtm
 from afra.tools.ps_estimator import pstimator
-
-
-def binell(modes, bins):
-    """
-    Angular mode binning.
-    
-    Parameters
-    ----------
-    
-    modes : list
-        Input angular mode list.
-    
-    bins : integer
-        Output angular mode bin number.
-    
-    Return
-    ------
-    
-    result : list
-        List of central angular modes for each bin.
-    """
-    assert isinstance(modes, list)
-    assert isinstance(bins, int)
-    result = list()
-    lres = len(modes)%bins
-    lmod = len(modes)//bins
-    # binned average for each single spectrum
-    for i in range(bins):
-        begin = min(lres,i)+i*lmod
-        end = min(lres,i) + (i+1)*lmod + int(i < lres)
-        result.append(0.5*(modes[begin]+modes[end-1]))
-    return result
-
-
-def bincps(cps, modes, bins):
-    """
-    Binned average of CROSS-power-spectrum (band power).
-    
-    Parameters
-    ----------
-    
-    cps : numpy.ndarray
-        Cross power spectrum in shape (N_ell, N_freq, N_freq).
-    
-    modes : list
-        Input angular mode list.
-    
-    bins : integer
-        Output angular mode bin number.
-    
-    Returns
-    -------
-    
-    result : numpy.ndarray
-        Binned cross band power in shape (N_bins, N_freq, N_freq).
-    """
-    assert isinstance(cps, np.ndarray)
-    assert isinstance(modes, list)
-    assert isinstance(bins, int)
-    assert (cps.shape[0] == len(modes))
-    assert (cps.shape[1] == cps.shape[2])
-    lres = len(modes)%bins
-    lmod = len(modes)//bins
-    result = np.empty((bins, cps.shape[1], cps.shape[2]))
-    cps_cp = cps.copy()  # avoid mem issue
-    for i in range(len(modes)):
-        cps_cp[i] *= 2.*np.pi/(modes[i]*(modes[i]+1))
-    # binned average for each single spectrum
-    for i in range(bins):
-        begin = min(lres,i)+i*lmod
-        end = min(lres,i) + (i+1)*lmod + int(i < lres)
-        effl = 0.5*(modes[begin]+modes[end-1])
-        result[i,:,:] = np.mean(cps_cp[begin:end,:,:], axis=0)*0.5*effl*(effl+1)/np.pi
-    return result
-
-
-def binaps(aps, modes, bins):
-    """
-    Binned average of AUTO-power-spectrum (band power).
-    
-    Parameters
-    ----------
-    
-    aps : numpy.ndarray
-        Auto power spectrum in shape (N_ell, N_freq).
-    
-    modes : list
-        Input angular mode list.
-    
-    bins : integer
-        Output angular mode bin number.
-    
-    Returns
-    -------
-    
-    result : numpy.ndarray
-        Binned auto band power in shape (N_bins, N_freq).
-    """
-    assert isinstance(aps, np.ndarray)
-    assert (aps.shape[0] == len(modes))
-    lres = len(modes)%bins
-    lmod = len(modes)//bins
-    # allocate results
-    result = np.empty((bins, aps.shape[1]))
-    aps_cp = aps.copy()
-    for i in range(len(modes)):
-        aps_cp[i] *= 2.*np.pi/(modes[i]*(modes[i]+1))
-    # binned average for each single spectrum
-    for i in range(bins):
-        begin = min(lres,i)+i*lmod
-        end = min(lres,i) + (i+1)*lmod + int(i < lres)
-        effl = 0.5*(modes[begin]+modes[end-1])
-        result[i,:] = np.mean(aps_cp[begin:end,:], axis=0)*0.5*effl*(effl+1)/np.pi
-    return result
 
 
 def oas_cov(sample):
@@ -189,8 +76,8 @@ def vec_gauss(cps):
     ----------
     
     cps : numpy.ndarray
-        cross-PS with dimension (# sample, # modes, # freq, # freq)
-        or                      (# modes, # freq, # freq)
+        cross-PS with dimension (# sample, # types, # modes, # freq, # freq)
+        or                      (# types, # modes, # freq, # freq)
     
     Returns
     -------
@@ -201,20 +88,22 @@ def vec_gauss(cps):
     assert (cps.shape[-1] == cps.shape[-2])
     nfreq = cps.shape[-2]
     nmode = cps.shape[-3]
-    dof = nfreq*(nfreq+1)//2
-    if (len(cps.shape) == 3):
-        rslt = np.zeros(nmode*dof)
-        for l in range(nmode):
-            trimed = np.triu(cps[l],k=0)
-            rslt[l*dof:(l+1)*dof] = trimed[trimed!=0]
-        return rslt
-    elif (len(cps.shape) == 4):
-        nsamp = cps.shape[0]
-        rslt = np.zeros((nsamp,nmode*dof))
-        for s in range(nsamp):
+    ntype = cps.shape[-4]
+    dof = nfreq*(nfreq+1)//2  # distinctive elements at each mode
+    triu_idx = np.triu_indices(nfreq)
+    if (len(cps.shape) == 4):
+        rslt = np.zeros(ntype*nmode*dof)
+        for t in range(ntype):
             for l in range(nmode):
-                trimed = np.triu(cps[s,l],k=0)
-                rslt[s,l*dof:(l+1)*dof] = trimed[trimed!=0]
+                rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = cps[t,l][triu_idx]
+        return rslt
+    elif (len(cps.shape) == 5):
+        nsamp = cps.shape[0]
+        rslt = np.zeros((nsamp,ntype*nmode*dof))
+        for s in range(nsamp):
+            for t in range(ntype):
+                for l in range(nmode):
+                    rslt[s,(t*nmode+l)*dof:(t*nmode+l+1)*dof] = cps[s,t,l][triu_idx]
         return rslt
     else:
         raise ValueError('unsupported input shape')
@@ -223,27 +112,30 @@ def vec_gauss(cps):
 def vec_hl(cps,cps_hat,cps_fid):
     """with measured cps_hat, fiducial cps_fid, modeled cps
     """
+    assert (len(cps.shape) == 4)
     assert isinstance(cps, np.ndarray)
     assert (cps.shape[-1] == cps.shape[-2])
     nfreq = cps.shape[-2]
     nmode = cps.shape[-3]
+    ntype = cps.shape[-4]
     dof = nfreq*(nfreq+1)//2
-    rslt = np.zeros(nmode*dof)
-    for l in range(cps.shape[0]):
-        c_h = cps_hat[l]
-        c_f = sqrtm(cps_fid[l])
-        c_inv = sqrtm(np.linalg.pinv(cps[l]))
-        res = np.dot(np.conjugate(c_inv), np.dot(c_h, c_inv))
-        [d, u] = np.linalg.eigh(res)
-        #assert (all(d>=0))
-        # real symmetric matrices are diagnalized by orthogonal matrices (M^t M = 1)
-        # this makes a diagonal matrix by applying g(x) to the eigenvalues, equation 10 in Barkats et al
-        gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
-        # multiplying from right to left
-        x = np.dot(gd, np.dot(np.transpose(u),c_f))
-        x = np.dot(c_f, np.dot(u,x))
-        trimed = np.triu(x,k=0)
-        rslt[l*dof:(l+1)*dof] = trimed[trimed!=0]
+    triu_idx = np.triu_indices(nfreq)
+    rslt = np.zeros(ntype*nmode*dof)
+    for t in range(ntype):
+        for l in range(nmode):
+            c_h = cps_hat[t,l]
+            c_f = sqrtm(cps_fid[t,l])
+            c_inv = sqrtm(np.linalg.pinv(cps[t,l]))
+            res = np.dot(np.conjugate(c_inv), np.dot(c_h, c_inv))
+            [d, u] = np.linalg.eigh(res)
+            #assert (all(d>=0))
+            # real symmetric matrices are diagnalized by orthogonal matrices (M^t M = 1)
+            # this makes a diagonal matrix by applying g(x) to the eigenvalues, equation 10 in Barkats et al
+            gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
+            # multiplying from right to left
+            x = np.dot(gd, np.dot(np.transpose(u),c_f))
+            x = np.dot(c_f, np.dot(u,x))
+            rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = x[triu_idx]
     return rslt
 
 
@@ -259,12 +151,18 @@ def bp_window(ps_estimator):
         the wrapped-in power-spectrum estimator
     """
     assert isinstance(ps_estimator, pstimator)
-    compress = np.zeros((len(ps_estimator.modes),3*ps_estimator.nside))
-    for i in range(len(ps_estimator.modes)):
-        lrange = np.array(ps_estimator._b.get_ell_list(i))
-        factor = 0.5*lrange*(lrange+1)/np.pi
-        w = np.array(ps_estimator._b.get_weight_list(i))
-        compress[i,lrange] = w*factor
+    ntarget = len(ps_estimator.targets)
+    nmode = len(ps_estimator.modes)
+    nps = 3*ps_estimator.nside
+    compress = np.zeros((ntarget*nmode,ntarget*nps))
+    for t0 in range(ntarget):
+        for i in range(nmode):  # ps band window
+            lrange = np.array(ps_estimator._b.get_ell_list(i))
+            factor = 0.5*lrange*(lrange+1)/np.pi
+            w = np.array(ps_estimator._b.get_weight_list(i))
+            compress[t0*nmode+i,lrange+t0*nps] = w*factor
+        #for t1 in range(t0+1,ntarget):
+        #    pass
     return compress
 
 

@@ -11,7 +11,7 @@ from afra.tools.icy_decorator import icy
 @icy
 class pstimator(object):
 
-    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmin=None, lmax=None, target='T'):
+    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmin=None, lmax=None, targets='T'):
         """
         Parameters
         ----------
@@ -34,8 +34,8 @@ class pstimator(object):
         lmax : (positive) integer
             Maximal angular mode.
         
-        target : string
-            Choosing among 'T', 'E' or 'B' mode.
+        targets : string
+            Choosing among 'T', 'E', 'B', 'EB', 'TEB' mode.
         """
         self.nside = nside
         self.aposcale = aposcale
@@ -45,9 +45,9 @@ class pstimator(object):
         self.mask = mask
         self._b = self.bands()
         self._modes = self._b.get_effective_ells()
-        self._target = target
-        self._autodict = {'T':self.autoBP_T,'E':self.autoBP_E,'B':self.autoBP_B}
-        self._crosdict = {'T':self.crosBP_T,'E':self.crosBP_E,'B':self.crosBP_B}
+        self._targets = targets
+        self._autodict = {'T':self.autoBP_T,'E':self.autoBP_E,'B':self.autoBP_B,'EB':self.autoBP_EB,'TEB':self.autoBP_TEB}
+        self._crosdict = {'T':self.crosBP_T,'E':self.crosBP_E,'B':self.crosBP_B,'EB':self.crosBP_EB,'TEB':self.autoBP_TEB}
 
     @property
     def nside(self):
@@ -86,8 +86,8 @@ class pstimator(object):
         return self._modes
 
     @property
-    def target(self):
-        return self._target
+    def targets(self):
+        return self._targets
 
     @nside.setter
     def nside(self, nside):
@@ -105,7 +105,7 @@ class pstimator(object):
             assert isinstance(mask, np.ndarray)
             assert (len(mask) == self._npix)
             self._mask = mask.copy()
-            self._apomask = nmt.mask_apodization(mask, self._aposcale, apotype='C2')
+            self._apomask = nmt.mask_apodization(self._mask, self._aposcale, apotype='C2')
 
     @aposcale.setter
     def aposcale(self, aposcale):
@@ -142,10 +142,10 @@ class pstimator(object):
             assert (lmax < 3*self._nside)
             self._lmax = lmax
 
-    @target.setter
-    def target(self, target):
-        assert isinstance(target, str)
-        self._target = target
+    @targets.setter
+    def targets(self, targets):
+        assert isinstance(targets, str)
+        self._targets = targets
 
     def purified_e(self, maps):
         """Get pure E mode scalar map with B2E leakage corrected.
@@ -231,6 +231,67 @@ class pstimator(object):
         rslt[fill] = y - a0 - a1*x
         return rslt
 
+    def purified_eb(self, maps):
+        """Get pure EB mode scalar map with B2E & E2B leakage corrected.
+        Has to be conducted before apodizing the mask.
+
+        Parameters
+        ----------
+
+        maps : numpy.ndarray
+            TQU maps at various frequencies,
+            in shape (3, N_pix).
+
+        Returns
+        -------
+        purified maps : numpy.ndarray
+            EB mode maps at various frequencies,
+            in shape (2, N_pix).
+        """
+        assert (maps.shape == (3,self._npix))
+        mask_sum = np.sum(self._mask)
+        fill = np.arange(self._npix)[np.where(self._mask>0.)] # the pixel index of the available index
+        rslt = np.zeros((2,self._npix),dtype=np.float32)
+        # get the template of E to B leakage
+        Alm0 = hp.map2alm(maps) #alms of the masked maps
+        E0 = hp.alm2map(Alm0[1],nside=self._nside,verbose=0)  # corrupted E map
+        B0 = hp.alm2map(Alm0[2],nside=self._nside,verbose=0)  # corrupted B map
+        Alm0_B = Alm0.copy()
+        Alm0_E = Alm0.copy()
+        Alm0_B[0] = 0.
+        Alm0_B[1] = 0.
+        Alm0_E[0] = 0.
+        Alm0_E[2] = 0.
+        B0p = hp.alm2map(Alm0_B,nside=self._nside,verbose=0)  # TQU of B mode only
+        E0p = hp.alm2map(Alm0_E,nside=self._nside,verbose=0)  # TQU of E mode only
+        B0p[:,self._mask==0.] = 0.  # re-mask
+        E0p[:,self._mask==0.] = 0.
+        Alm1_E = hp.map2alm(E0p)  # Alms of the TUQ from E-mode only
+        Alm1_B = hp.map2alm(B0p)  # Alms of the TQU from B-mode only
+        E1 = hp.alm2map(Alm1_B[1],nside=self._nside,verbose=0)  # template of B2E leakage
+        B1 = hp.alm2map(Alm1_E[2],nside=self._nside,verbose=0)  # template of E2B leakage
+        # compute the residual of linear fit (E mode)
+        x = E1[fill]
+        y = E0[fill]
+        mx  = np.sum(x)/mask_sum
+        my  = np.sum(y)/mask_sum
+        cxx = np.sum((x-mx)*(x-mx))
+        cxy = np.sum((y-my)*(x-mx))
+        a1  = cxy/cxx
+        a0  = my - mx*a1
+        rslt[0,fill] = y - a0 - a1*x
+        # (B mode)
+        x = B1[fill]
+        y = B0[fill]
+        mx  = np.sum(x)/mask_sum
+        my  = np.sum(y)/mask_sum
+        cxx = np.sum((x-mx)*(x-mx))
+        cxy = np.sum((y-my)*(x-mx))
+        a1  = cxy/cxx
+        a0  = my - mx*a1
+        rslt[1,fill] = y - a0 - a1*x
+        return rslt
+
     def bands(self):
         """NaMaster multipole band object"""
         ells = np.arange(3*self._nside, dtype='int32')  # Array of multipoles
@@ -291,7 +352,7 @@ class pstimator(object):
         
         fwhms : float
             FWHM of gaussian beams
-        
+
         Returns
         -------
         
@@ -300,9 +361,10 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (3,self._npix))
-        maps[:,self._mask==0.] = 0.  # !!!
+        _cleaned = maps.copy()
+        _cleaned[:,self._mask==0.] = 0.  # !!!
         # select among T, E and B
-        return self._autodict[self._target](maps,wsp,fwhms)
+        return self._autodict[self._targets](_cleaned,wsp,fwhms)
 
     def crosBP(self, maps, wsp=None, fwhms=[None,None]):
         """
@@ -329,9 +391,10 @@ class pstimator(object):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (6,self._npix))
         assert (len(fwhms) == 2)
-        maps[:,self._mask==0.] = 0.  # !!!
+        _cleaned = maps.copy()
+        _cleaned[:,self._mask==0.] = 0.  # !!!
         # select among T, E and B
-        return self._crosdict[self._target](maps,wsp,fwhms)
+        return self._crosdict[self._targets](_cleaned,wsp,fwhms)
 
     def autoBP_T(self, maps, wsp=None, fwhms=None):
         dat = maps[0]
@@ -443,3 +506,58 @@ class pstimator(object):
             cl00c = nmt.compute_coupled_cell(f01, f02)
             cl00 = wsp.decouple_cell(cl00c)
             return (self._modes, cl00[0])
+
+    def autoBP_EB(self, maps, wsp=None, fwhms=None):
+        dat = self.purified_eb(maps)
+        # assemble NaMaster fields
+        if fwhms is None:
+            f0_e = nmt.NmtField(self._apomask, [dat[0]])
+            f0_b = nmt.NmtField(self._apomask, [dat[1]])
+        else:
+            f0_e = nmt.NmtField(self._apomask, [dat[0]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+            f0_b = nmt.NmtField(self._apomask, [dat[1]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+        # estimate PS
+        if wsp is None:
+            cl00_e = nmt.compute_full_master(f0_e, f0_e, self._b)
+            cl00_b = nmt.compute_full_master(f0_b, f0_b, self._b)
+            return (self._modes, cl00_e[0], cl00_b[0])
+        else:
+            cl00c_e = nmt.compute_coupled_cell(f0_e, f0_e)
+            cl00c_b = nmt.compute_coupled_cell(f0_b, f0_b)
+            cl00_e = wsp.decouple_cell(cl00c_e)
+            cl00_b = wsp.decouple_cell(cl00c_b)
+            return (self._modes, cl00_e[0], cl00_b[0])
+
+    def crosBP_EB(self, maps, wsp=None, fwhms=[None,None]):
+        dat1 = self.purified_eb(maps[:3])
+        dat2 = self.purified_eb(maps[3:])
+        # assemble NaMaster fields
+        if fwhms[0] is None:
+            f01_e = nmt.NmtField(self._apomask, [dat1[0]])
+            f01_b = nmt.NmtField(self._apomask, [dat1[1]])
+        else:
+            f01_e = nmt.NmtField(self._apomask, [dat1[0]], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
+            f01_b = nmt.NmtField(self._apomask, [dat1[1]], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
+        if fwhms[1] is None:
+            f02_e = nmt.NmtField(self._apomask, [dat2[0]])
+            f02_b = nmt.NmtField(self._apomask, [dat2[1]]) 
+        else:
+            f02_e = nmt.NmtField(self._apomask, [dat2[0]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+            f02_b = nmt.NmtField(self._apomask, [dat2[1]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+        # estimate PS
+        if wsp is None:
+            cl00_e = nmt.compute_full_master(f01_e, f02_e, self._b)
+            cl00_b = nmt.compute_full_master(f01_b, f02_b, self._b)
+            return (self._modes, cl00_e[0], cl00_b[0])
+        else:
+            cl00c_e = nmt.compute_coupled_cell(f01_e, f02_e)
+            cl00c_b = nmt.compute_coupled_cell(f01_b, f02_b)
+            cl00_e = wsp.decouple_cell(cl00c_e)
+            cl00_b = wsp.decouple_cell(cl00c_b)
+            return (self._modes, cl00_e[0], cl00_b[0])
+
+    def autoBP_TEB(self, maps, wsp=None, fwhms=None):
+        pass
+
+    def crosBP_TEB(self, maps, wsp=None, fwhms=[None,None]):
+        pass

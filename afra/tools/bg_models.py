@@ -16,13 +16,13 @@ from afra.tools.aux import bp_window
 @icy
 class bgmodel(object):
 
-    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None):
+    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None):
         self.freqlist = freqlist
-        self.target = target
+        self.targets = targets
         self.mask = mask
         self.aposcale = aposcale
         self.psbin = psbin
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax,target=self._target)  # init PS estimator
+        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax,targets=self._targets)  # init PS estimator
         self._modes = self._est.modes
         self._params = dict()  # base class holds empty dict
         self._params_dft = dict()
@@ -37,8 +37,12 @@ class bgmodel(object):
         return self._nfreq
 
     @property
-    def target(self):
-        return self._target
+    def targets(self):
+        return self._targets
+
+    @property
+    def ntarget(self):
+        return self._ntarget
 
     @property
     def modes(self):
@@ -86,10 +90,11 @@ class bgmodel(object):
         self._freqlist = freqlist
         self._nfreq = len(self._freqlist)
 
-    @target.setter
-    def target(self, target):
-        assert isinstance(target, str)
-        self._target = target
+    @targets.setter
+    def targets(self, targets):
+        assert isinstance(targets, str)
+        self._targets = targets
+        self._ntarget = len(targets)
 
     @aposcale.setter
     def aposcale(self, aposcale):
@@ -117,8 +122,8 @@ class bgmodel(object):
 @icy
 class cmbmodel(bgmodel):
     
-    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None):
-        super(cmbmodel, self).__init__(freqlist,target,mask,aposcale,psbin,lmin,lmax)
+    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None):
+        super(cmbmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
 
@@ -128,7 +133,9 @@ class cmbmodel(bgmodel):
         - bandpower "bp_c_x", exponential index of amplitude
         """
         plist = list()
-        prefix = ['bp_c_'+self._target+'_']
+        prefix = list()
+        for t in self._targets:
+            prefix.append('bp_c_'+t+'_')
         for i in prefix:
             for j in range(len(self._modes)):
                 plist.append(i+str(self._modes[j]))
@@ -169,9 +176,10 @@ class cmbmodel(bgmodel):
         freq_ref : float
             synchrotron template reference frequency
         """
-        bp = np.ones((len(self._modes),self._nfreq,self._nfreq))
-        for l in range(len(self._modes)):
-            bp[l] *= self._params['bp_c_'+self._target+'_'+str(self._modes[l])]
+        bp = np.ones((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
+        for t in range(self._ntarget):
+            for l in range(len(self._modes)):
+                bp[t,l] *= self._params['bp_c_'+self._targets[t]+'_'+str(self._modes[l])]
         return bp
 
 
@@ -179,8 +187,8 @@ class cmbmodel(bgmodel):
 class cambmodel(bgmodel):
     """cmb model by camb"""
 
-    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None):
-        super(cambmodel, self).__init__(freqlist,target,mask,aposcale,psbin,lmin,lmax)
+    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None):
+        super(cambmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
         # calculate camb template CMB PS with default parameters
@@ -221,10 +229,14 @@ class cambmodel(bgmodel):
         """cross-(frequency)-power-spectrum
         in shape (ell #, freq #, freq #)
         """
-        enum = {'T':0,'E':1,'B':2}
-        fiducial_cl = np.transpose(self._templates['lensed_scalar']*[1.,1.,self._params['Lb'],1.])[enum[self._target]][:3*self._nside] + np.transpose(self._templates['tensor']*[1.,1.,self._params['r']/0.05,1.])[enum[self._target]][:3*self._nside]
-        fiducial_bp = bp_window(self._est).dot(fiducial_cl)
-        bp_out = np.ones((len(self._modes),self._nfreq,self._nfreq))
-        for l in range(len(self._modes)):
-            bp_out[l] *= fiducial_bp[l]
+        enum = {'T':[0],'E':[1],'B':[2],'EB':[1,2],'TEB':[0,1,2]}
+        fiducial_cl = np.transpose(self._templates['lensed_scalar']*[1.,1.,self._params['Lb'],1.])[enum[self._targets],:3*self._nside] + np.transpose(self._templates['tensor']*[1.,1.,self._params['r']/0.05,1.])[enum[self._targets],:3*self._nside]
+        # fiducial_cl in shape (ntarget,3*nside)
+        fiducial_bp = np.empty((self._ntarget,len(self._est.modes)),dtype=np.float32)
+        for t in range(self._ntarget):
+            fiducial_bp[t] = bp_window(self._est).dot(fiducial_cl[t])
+        bp_out = np.ones((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
+        for t in range(self._ntarget):
+            for l in range(len(self._modes)):
+                bp_out[t,l] *= fiducial_bp[t,l]
         return bp_out

@@ -18,15 +18,15 @@ from afra.tools.ps_estimator import pstimator
 @icy
 class fgmodel(object):
 
-    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
+    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
         self.freqlist = freqlist
-        self.target = target
+        self.targets = targets
         self.mask = mask
         self.aposcale = aposcale
         self.psbin = psbin
         self.templates = templates
         self.template_fwhms = template_fwhms
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax,target=self._target)  # init PS estimator
+        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax,targets=self._targets)
         self._modes = self._est.modes  # discard 1st multipole bin
         self._params = dict()  # base class holds empty dict
         self._params_dft = dict()
@@ -41,8 +41,12 @@ class fgmodel(object):
         return self._nfreq
 
     @property
-    def target(self):
-        return self._target
+    def targets(self):
+        return self._targets
+
+    @property
+    def ntarget(self):
+        return self._ntarget
 
     @property
     def modes(self):
@@ -114,10 +118,11 @@ class fgmodel(object):
         self._freqlist = freqlist
         self._nfreq = len(self._freqlist)
 
-    @target.setter
-    def target(self, target):
-        assert isinstance(target, str)
-        self._target = target
+    @targets.setter
+    def targets(self, targets):
+        assert isinstance(targets, str)
+        self._targets = targets
+        self._ntarget = len(targets)
 
     @aposcale.setter
     def aposcale(self, aposcale):
@@ -183,15 +188,15 @@ class fgmodel(object):
 @icy
 class syncmodel(fgmodel):
     
-    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
-        super(syncmodel, self).__init__(freqlist,target,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
+    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
+        super(syncmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
         assert (self._template_nfreq == 1)
         # # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
         # calculate template PS
         if self._template_flag:
             for ref in self._template_freqlist:
-                self.template_ps[ref] = self._est.autoBP(self._templates[ref],fwhms=self._template_fwhms[ref])[1]
+                self.template_ps[ref] = self._est.autoBP(self._templates[ref],fwhms=self._template_fwhms[ref])
 
     @property
     def param_list(self):
@@ -201,7 +206,9 @@ class syncmodel(fgmodel):
         """
         plist = list()
         if not self._template_flag:
-            prefix = ['bp_s_'+self._target+'_']
+            prefix = list()
+            for t in self._targets:
+                prefix.append('bp_s_'+t+'_')
             for i in prefix:
             	for j in range(len(self._modes)):
                 	plist.append(i+str(self._modes[j]))
@@ -240,33 +247,34 @@ class syncmodel(fgmodel):
         ref = self._template_freqlist[0]
         # estimate bandpower from templates
         ps_s = self._template_ps[ref]
-        dl = np.zeros((len(self._modes),self._nfreq,self._nfreq))
-        for l in range(len(self._modes)):
-            bp_s = ps_s[l]
-            for i in range(self._nfreq):
-                f_ratio_i = (self._freqlist[i]/ref)**beta_val_s
-                c_ratio_i = self.i2cmb(self._freqlist[i],ref)
-                dl[l,i,i] = bp_s * (f_ratio_i*c_ratio_i)**2
-                for j in range(i+1,self._nfreq):
-                    f_ratio_j = (self._freqlist[j]/ref)**beta_val_s
-                    c_ratio_j = self.i2cmb(self._freqlist[j],ref)
-                    dl[l,i,j] = bp_s * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
-                    dl[l,j,i] = dl[l,i,j]
+        dl = np.zeros((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
+        for t in range(self._ntarget):
+            for l in range(len(self._modes)):
+                bp_s = ps_s[t+1][l]
+                for i in range(self._nfreq):
+                    f_ratio_i = (self._freqlist[i]/ref)**beta_val_s
+                    c_ratio_i = self.i2cmb(self._freqlist[i],ref)
+                    dl[t,l,i,i] = bp_s * (f_ratio_i*c_ratio_i)**2
+                    for j in range(i+1,self._nfreq):
+                        f_ratio_j = (self._freqlist[j]/ref)**beta_val_s
+                        c_ratio_j = self.i2cmb(self._freqlist[j],ref)
+                        dl[t,l,i,j] = bp_s * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+                        dl[t,l,j,i] = dl[t,l,i,j]
         return dl
 
 
 @icy
 class dustmodel(fgmodel):
    
-    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
-        super(dustmodel, self).__init__(freqlist,target,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
+    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
+        super(dustmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
         assert (self._template_nfreq == 1)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
         # calculate template PS
         if self._template_flag:
             for ref in self._template_freqlist:
-                self.template_ps[ref] = self._est.autoBP(self._templates[ref],fwhms=self._template_fwhms[ref])[1]
+                self.template_ps[ref] = self._est.autoBP(self._templates[ref],fwhms=self._template_fwhms[ref])
 
     @property
     def param_list(self):
@@ -276,7 +284,9 @@ class dustmodel(fgmodel):
         """
         plist = list()
         if not self._template_flag:
-            prefix = ['bp_d_'+self._target+'_']
+            prefix = list()
+            for t in self._targets:
+                prefix.append('bp_d_'+t+'_')
             for i in prefix:
             	for j in range(len(self._modes)):
                 	plist.append(i+str(self._modes[j]))
@@ -319,33 +329,34 @@ class dustmodel(fgmodel):
         ref = self._template_freqlist[0]
         ps_d = self._template_ps[ref]
         # estimate bandpower from templates
-        dl = np.zeros((len(self._modes),self._nfreq,self._nfreq))
-        for l in range(len(self._modes)):
-            bp_d = ps_d[l]
-            for i in range(self._nfreq):
-                f_ratio_i = (self._freqlist[i]/ref)**beta_val_d*self.bratio(self._freqlist[i],ref)
-                c_ratio_i = self.i2cmb(self._freqlist[i],ref)
-                dl[l,i,i] = bp_d * (f_ratio_i*c_ratio_i)**2
-                for j in range(i+1,self._nfreq):
-                    f_ratio_j = (self._freqlist[j]/ref)**beta_val_d*self.bratio(self._freqlist[j],ref)
-                    c_ratio_j = self.i2cmb(self._freqlist[j],ref)
-                    dl[l,i,j] = bp_d * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
-                    dl[l,j,i] = dl[l,i,j]
+        dl = np.zeros((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
+        for t in range(self._ntarget):
+            for l in range(len(self._modes)):
+                bp_d = ps_d[t+1][l]
+                for i in range(self._nfreq):
+                    f_ratio_i = (self._freqlist[i]/ref)**beta_val_d*self.bratio(self._freqlist[i],ref)
+                    c_ratio_i = self.i2cmb(self._freqlist[i],ref)
+                    dl[t,l,i,i] = bp_d * (f_ratio_i*c_ratio_i)**2
+                    for j in range(i+1,self._nfreq):
+                        f_ratio_j = (self._freqlist[j]/ref)**beta_val_d*self.bratio(self._freqlist[j],ref)
+                        c_ratio_j = self.i2cmb(self._freqlist[j],ref)
+                        dl[t,l,i,j] = bp_d * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+                        dl[t,l,j,i] = dl[t,l,i,j]
         return dl
 
 
 @icy
 class syncdustmodel(fgmodel):
 
-    def __init__(self, freqlist, target, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
-        super(syncdustmodel, self).__init__(freqlist,target,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
+    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
+        super(syncdustmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
         assert (self._template_nfreq == 2)
         # setup self.params' keys by param_list and content by param_dft
         self.reset(self.default)
         # calculate template PS
         if self._template_flag:
             for ref in self._template_freqlist:
-                self.template_ps[ref] = self._est.autoBP(self._templates[ref],fwhms=self._template_fwhms[ref])[1]
+                self.template_ps[ref] = self._est.autoBP(self._templates[ref],fwhms=self._template_fwhms[ref])
 
     @property
     def param_list(self):
@@ -355,7 +366,10 @@ class syncdustmodel(fgmodel):
         """
         plist = list()
         if not self._template_flag:
-            prefix = ['bp_s_'+self._target+'_','bp_d_'+self._target+'_']
+            prefix = list()
+            for t in self._targets:
+                prefix.append('bp_s_'+t+'_')
+                prefix.append('bp_d_'+t+'_')
             for i in prefix:
             	for j in range(len(self._modes)):
                 	plist.append(i+str(self._modes[j]))
@@ -405,25 +419,26 @@ class syncdustmodel(fgmodel):
         ps_s = self._template_ps[ref[0]]
         ps_d = self._template_ps[ref[1]]
         # estimate bandpower from templates
-        dl = np.zeros((len(self._modes),self._nfreq,self._nfreq))
-        for l in range(len(self._modes)):
-            bp_s = ps_s[l]
-            bp_d = ps_d[l]
-            for i in range(self._nfreq):
-                f_ratio_is = (self._freqlist[i]/ref[0])**beta_val_s
-                f_ratio_id = (self._freqlist[i]/ref[1])**beta_val_d*self.bratio(self._freqlist[i],ref[1])
-                c_ratio_is = self.i2cmb(self._freqlist[i],ref[0])
-                c_ratio_id = self.i2cmb(self._freqlist[i],ref[1])
-                dl[l,i,i] = bp_s * (f_ratio_is*c_ratio_is)**2
-                dl[l,i,i] += bp_d * (f_ratio_id*c_ratio_id)**2
-                dl[l,i,i] += rho * np.sqrt(bp_s*bp_d) * (f_ratio_is*f_ratio_id*c_ratio_is*c_ratio_id)
-                for j in range(i+1,self._nfreq):
-                    f_ratio_js = (self._freqlist[j]/ref[0])**beta_val_s
-                    f_ratio_jd = (self._freqlist[j]/ref[1])**beta_val_d*self.bratio(self._freqlist[j],ref[1])
-                    c_ratio_js = self.i2cmb(self._freqlist[j],ref[0])
-                    c_ratio_jd = self.i2cmb(self._freqlist[j],ref[1])
-                    dl[l,i,j] = bp_s * (f_ratio_is*c_ratio_is*f_ratio_js*c_ratio_js)
-                    dl[l,i,j] += bp_d * (f_ratio_id*c_ratio_id*f_ratio_jd*c_ratio_jd)
-                    dl[l,i,j] += rho * np.sqrt(bp_s*bp_d) * ( f_ratio_is*c_ratio_is*f_ratio_jd*c_ratio_jd + f_ratio_id*c_ratio_id*f_ratio_js*c_ratio_js  )
-                    dl[l,j,i] = dl[l,i,j]
+        dl = np.zeros((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
+        for t in range(self._ntarget):
+            for l in range(len(self._modes)):
+                bp_s = ps_s[t+1][l]
+                bp_d = ps_d[t+1][l]
+                for i in range(self._nfreq):
+                    f_ratio_is = (self._freqlist[i]/ref[0])**beta_val_s
+                    f_ratio_id = (self._freqlist[i]/ref[1])**beta_val_d*self.bratio(self._freqlist[i],ref[1])
+                    c_ratio_is = self.i2cmb(self._freqlist[i],ref[0])
+                    c_ratio_id = self.i2cmb(self._freqlist[i],ref[1])
+                    dl[t,l,i,i] = bp_s * (f_ratio_is*c_ratio_is)**2
+                    dl[t,l,i,i] += bp_d * (f_ratio_id*c_ratio_id)**2
+                    dl[t,l,i,i] += rho * np.sqrt(bp_s*bp_d) * (f_ratio_is*f_ratio_id*c_ratio_is*c_ratio_id)
+                    for j in range(i+1,self._nfreq):
+                        f_ratio_js = (self._freqlist[j]/ref[0])**beta_val_s
+                        f_ratio_jd = (self._freqlist[j]/ref[1])**beta_val_d*self.bratio(self._freqlist[j],ref[1])
+                        c_ratio_js = self.i2cmb(self._freqlist[j],ref[0])
+                        c_ratio_jd = self.i2cmb(self._freqlist[j],ref[1])
+                        dl[t,l,i,j] = bp_s * (f_ratio_is*c_ratio_is*f_ratio_js*c_ratio_js)
+                        dl[t,l,i,j] += bp_d * (f_ratio_id*c_ratio_id*f_ratio_jd*c_ratio_jd)
+                        dl[t,l,i,j] += rho * np.sqrt(bp_s*bp_d) * ( f_ratio_is*c_ratio_is*f_ratio_jd*c_ratio_jd + f_ratio_id*c_ratio_id*f_ratio_js*c_ratio_js  )
+                        dl[t,l,j,i] = dl[t,l,i,j]
         return dl

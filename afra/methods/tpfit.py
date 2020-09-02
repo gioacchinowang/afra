@@ -73,7 +73,7 @@ class tpfit_gauss(object):
     @signal.setter
     def signal(self, signal):
         assert isinstance(signal, np.ndarray)
-        assert (len(signal.shape) == 3)
+        assert (len(signal.shape) == 4)
         self._signal = signal.copy()  # signal matrix
 
     @covariance.setter
@@ -256,19 +256,19 @@ class tpfit_hl(object):
     @signal.setter
     def signal(self, signal):
         assert isinstance(signal, np.ndarray)
-        assert (len(signal.shape) == 3)
+        assert (len(signal.shape) == 4)
         self._signal = signal.copy()  # vectorized signal matrix
 
     @fiducial.setter
     def fiducial(self, fiducial):
         assert isinstance(fiducial, np.ndarray)
-        assert (len(fiducial.shape) == 3)
+        assert (len(fiducial.shape) == 4)
         self._fiducial = fiducial.copy()
 
     @noise.setter
     def noise(self, noise):
         assert isinstance(noise, np.ndarray)
-        assert (len(noise.shape) == 3)
+        assert (len(noise.shape) == 4)
         self._noise = noise.copy()
 
     @covariance.setter
