@@ -10,75 +10,56 @@ CMB models
 import numpy as np
 from afra.tools.icy_decorator import icy
 from afra.tools.ps_estimator import pstimator
-from afra.tools.aux import bp_window
 
 
 @icy
 class bgmodel(object):
 
-    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None):
+    def __init__(self, freqlist, estimator):
         self.freqlist = freqlist
-        self.targets = targets
-        self.mask = mask
-        self.aposcale = aposcale
-        self.psbin = psbin
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax,targets=self._targets)  # init PS estimator
-        self._modes = self._est.modes
+        self.estimator = estimator
         self._params = dict()  # base class holds empty dict
-        self._params_dft = dict()
-        self._templates = None  # template PS from camb
+        self._paramlist = list()
+        self._blacklist = list()  # fixed parameter list
+        self._paramdft = dict()
+        self._paramrange = dict()
+        self._template_ps = None  # template PS from camb
 
     @property
     def freqlist(self):
         return self._freqlist
 
     @property
+    def estimator(self):
+        return self._estimator
+
+    @property
     def nfreq(self):
         return self._nfreq
-
-    @property
-    def targets(self):
-        return self._targets
-
-    @property
-    def ntarget(self):
-        return self._ntarget
-
-    @property
-    def modes(self):
-        return self._modes
-
-    @property
-    def npix(self):
-        return self._npix
-
-    @property
-    def nside(self):
-        return self._nside
-
-    @property
-    def mask(self):
-        return self._mask
-
-    @property
-    def aposcale(self):
-        return self._aposcale
-
-    @property
-    def psbin(self):
-        return self._psbin
 
     @property
     def params(self):
         return self._params
 
     @property
-    def param_dft(self):
-        return self._param_dft
+    def paramdft(self):
+        return self._paramdft
 
     @property
-    def param_list(self):
-        return self._param_list
+    def paramlist(self):
+        return self._paramlist
+
+    @property
+    def blacklist(self):
+        return self._blacklist
+
+    @property
+    def paramrange(self):
+        return self._paramrange
+
+    @property
+    def template_ps(self):
+        return self._template_ps
 
     @property
     def est(self):
@@ -90,153 +71,147 @@ class bgmodel(object):
         self._freqlist = freqlist
         self._nfreq = len(self._freqlist)
 
-    @targets.setter
-    def targets(self, targets):
-        assert isinstance(targets, str)
-        self._targets = targets
-        self._ntarget = len(targets)
+    @blacklist.setter
+    def blacklist(self, blacklist):
+        assert isinstance(blacklist, list)
+        for p in blacklist:
+            assert (p in self._paramlist)
+        self._blacklist = blacklist
 
-    @aposcale.setter
-    def aposcale(self, aposcale):
-        self._aposcale = aposcale
-
-    @psbin.setter
-    def psbin(self, psbin):
-        self._psbin = psbin
-
-    @mask.setter
-    def mask(self, mask):
-        assert isinstance(mask, np.ndarray)
-        self._mask = mask.copy()
-        self._npix = len(mask)
-        self._nside = int(np.sqrt(self._npix//12))
+    @estimator.setter
+    def estimator(self, estimator):
+        assert isinstance(estimator, pstimator)
+        self._estimator = estimator
 
     def reset(self, pdict):
         """(re)set parameters"""
         assert isinstance(pdict, dict)
         for name in pdict.keys():
-            if name in self.param_list:
+            if name in self._paramlist:
                 self._params.update({name: pdict[name]})
 
 
 @icy
 class cmbmodel(bgmodel):
-    
-    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None):
-        super(cmbmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax)
-        # setup self.params' keys by param_list and content by param_dft
-        self.reset(self.default)
 
-    @property
-    def param_list(self):
+    def __init__(self, freqlist, estimator): 
+        super(cmbmodel, self).__init__(freqlist,estimator)
+        self._paramlist = self.initlist()
+        self._paramrange = self.initrange()
+        self._paramdft = self.initdft()
+
+    def initlist(self):
         """parameters are set as
         - bandpower "bp_c_x", exponential index of amplitude
         """
         plist = list()
-        prefix = list()
-        for t in self._targets:
-            prefix.append('bp_c_'+t+'_')
-        for i in prefix:
-            for j in range(len(self._modes)):
-                plist.append(i+str(self._modes[j]))
+        for t in self._estimator._targets:
+            for j in range(len(self._estimator._modes)):
+                plist.append('bp_c_'+t+'_'+'{:.2f}'.format(self._estimator._modes[j]))
         return plist
-        
-    @property
-    def param_range(self):
+
+    def initrange(self):
         """parameter sampling range,
         in python dict
         {param name : [low limit, high limit]
         """
         prange = dict()
-        _tmp = self.param_list
-        for i in _tmp:
-            prange[i] = [0.,1.e+4]
+        for i in self._paramlist:
+            prange[i] = [0.,1.0e+4]
         return prange
 
-    @property
-    def default(self):
+    def initdft(self):
         """register default parameter values
         """
-        prange = self.param_range
         pdft = dict()
-        for key in prange.keys():
-            pdft[key] = 0.5*(prange[key][0] + prange[key][1])
+        for key in self._paramrange.keys():
+            pdft[key] = 0.5*(self._paramrange[key][0] + self._paramrange[key][1])
+        self.reset(pdft)
         return pdft
-        
+
     def bandpower(self):
         """cross-(frequency)-power-spectrum
         in shape (ell #, freq #, freq #)
         
         Parameters
         ----------
-            
+         
         freq_list : float
             list of frequency in GHz
             
         freq_ref : float
             synchrotron template reference frequency
         """
-        bp = np.ones((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
-        for t in range(self._ntarget):
-            for l in range(len(self._modes)):
-                bp[t,l] *= self._params['bp_c_'+self._targets[t]+'_'+str(self._modes[l])]
-        return bp
+        fiducial_bp = np.zeros((self._estimator._ntarget,self._estimator._nmode),dtype=np.float32)
+        for t in range(self._estimator._ntarget):
+            for l in range(self._estimator._nmode):
+                    fiducial_bp[t,l] = self._params['bp_c_'+self._estimator._targets[t]+'_'+'{:.2f}'.format(self._estimator._modes[l])]
+        fiducial_bp = self._estimator.filtrans(fiducial_bp)
+        bp_out = np.ones((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        for t in range(self._estimator._ntarget):
+            for l in range(self._estimator._nmode):
+                bp_out[t,l] *= fiducial_bp[t,l]
+        return bp_out
 
 
 @icy
 class cambmodel(bgmodel):
     """cmb model by camb"""
 
-    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None):
-        super(cambmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax)
-        # setup self.params' keys by param_list and content by param_dft
-        self.reset(self.default)
+    def __init__(self, freqlist, estimator):
+        super(cambmodel, self).__init__(freqlist,estimator)
+        self._paramlist = self.initlist()
+        self._paramrange = self.initrange()
+        self._paramdft = self.initdft()
+        if not ('E' in self._estimator.targets):
+            self._blacklist.append('Ae')
+        if not ('B' in self._estimator.targets):
+            self._blacklist.append('r')
+            self._blacklist.append('Al')
         # calculate camb template CMB PS with default parameters
         import camb
         pars = camb.CAMBparams()
         pars.set_cosmology(H0=67.5,ombh2=0.022,omch2=0.122,mnu=0.06,omk=0,tau=0.06)
         pars.InitPower.set_params(As=2e-9,ns=0.965,r=0.05)
-        pars.set_for_lmax(4000,lens_potential_accuracy=1)
+        pars.set_for_lmax(max(4000,self._estimator._lmax),lens_potential_accuracy=1)
         pars.WantTensors = True
         results = camb.get_results(pars)
-        self._templates = results.get_cmb_power_spectra(pars,CMB_unit='muK',raw_cl=True)
+        self._template_ps = results.get_cmb_power_spectra(pars,CMB_unit='muK',raw_cl=True)
 
-    @property
-    def param_list(self):
-        """parameters are set as
-        - "r", tensor-to-scalar ratio
-        """
-        return ['r','Lb']
+    def initlist(self):
+        return ['r','Al','Ae']
 
-    @property
-    def default(self):
-        """register default parameter values
-        """
-        return {'r': 0.05, 'Lb': 1.}
-
-    @property
-    def param_range(self):
+    def initrange(self):
         """parameter sampling range,
         in python dict
         {param name : [low limit, high limit]
         """
         prange = dict()
         prange['r'] = [0.,1.]
-        prange['Lb'] = [0.,2.]
+        prange['Al'] = [0.,2.]
+        prange['Ae'] = [0.,2.]
         return prange
+
+    def initdft(self):
+        """register default parameter values
+        """
+        pdft = {'r': 0.05, 'Al': 1., 'Ae': 1.}
+        self.reset(pdft)
+        return pdft
 
     def bandpower(self):
         """cross-(frequency)-power-spectrum
         in shape (ell #, freq #, freq #)
         """
         enum = {'T':[0],'E':[1],'B':[2],'EB':[1,2],'TEB':[0,1,2]}
-        fiducial_cl = np.transpose(self._templates['lensed_scalar']*[1.,1.,self._params['Lb'],1.])[enum[self._targets],:3*self._nside] + np.transpose(self._templates['tensor']*[1.,1.,self._params['r']/0.05,1.])[enum[self._targets],:3*self._nside]
-        # fiducial_cl in shape (ntarget,3*nside)
-        fiducial_bp = np.empty((self._ntarget,len(self._est.modes)),dtype=np.float32)
-        for t in range(self._ntarget):
-            fiducial_bp[t] = bp_window(self._est).dot(fiducial_cl[t])
-        bp_out = np.ones((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
-        for t in range(self._ntarget):
-            for l in range(len(self._modes)):
+        fiducial_cl = np.transpose(self._template_ps['lensed_scalar']*[1.,self._params['Ae'],self._params['Al'],1.])[enum[self._estimator._targets],self._estimator._lmin:self._estimator._lmax] + np.transpose(self._template_ps['tensor']*[1.,self._params['Ae'],self._params['r']/0.05,1.])[enum[self._estimator._targets],self._estimator._lmin:self._estimator._lmax]
+        # fiducial_cl in shape (ntarget,lmax-lmin)
+        fiducial_bp = np.zeros((self._estimator._ntarget,self._estimator._nmode),dtype=np.float32)
+        for t in range(self._estimator._ntarget):
+            fiducial_bp[t] = self._estimator.bpconvert(fiducial_cl[t])
+        fiducial_bp = self._estimator.filtrans(fiducial_bp)
+        bp_out = np.ones((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        for t in range(self._estimator._ntarget):
+            for l in range(self._estimator._nmode):
                 bp_out[t,l] *= fiducial_bp[t,l]
         return bp_out

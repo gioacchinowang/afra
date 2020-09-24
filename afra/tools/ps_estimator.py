@@ -11,7 +11,7 @@ from afra.tools.icy_decorator import icy
 @icy
 class pstimator(object):
 
-    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmin=None, lmax=None, targets='T'):
+    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmin=None, lmax=None, targets='T', filt=None):
         """
         Parameters
         ----------
@@ -36,6 +36,9 @@ class pstimator(object):
         
         targets : string
             Choosing among 'T', 'E', 'B', 'EB', 'TEB' mode.
+
+        filt : dict
+            filtering effect in BP, recording extra mixing/rescaling of BP
         """
         self.nside = nside
         self.aposcale = aposcale
@@ -44,8 +47,9 @@ class pstimator(object):
         self.lmax = lmax
         self.mask = mask
         self._b = self.bands()
-        self._modes = self._b.get_effective_ells()
-        self._targets = targets
+        self.modes = self._b.get_effective_ells()
+        self.targets = targets
+        self.filt = filt
         self._autodict = {'T':self.autoBP_T,'E':self.autoBP_E,'B':self.autoBP_B,'EB':self.autoBP_EB,'TEB':self.autoBP_TEB}
         self._crosdict = {'T':self.crosBP_T,'E':self.crosBP_E,'B':self.crosBP_B,'EB':self.crosBP_EB,'TEB':self.autoBP_TEB}
 
@@ -86,8 +90,20 @@ class pstimator(object):
         return self._modes
 
     @property
+    def nmode(self):
+        return self._nmode
+
+    @property
     def targets(self):
         return self._targets
+
+    @property
+    def ntarget(self):
+        return self._ntarget
+
+    @property
+    def filt(self):
+        return self._filt
 
     @nside.setter
     def nside(self, nside):
@@ -142,10 +158,24 @@ class pstimator(object):
             assert (lmax < 3*self._nside)
             self._lmax = lmax
 
+    @modes.setter
+    def modes(self, modes):
+        #assert isinstance(modes, list)
+        self._modes = modes
+        self._nmode = len(modes)
+
     @targets.setter
     def targets(self, targets):
         assert isinstance(targets, str)
         self._targets = targets
+        self._ntarget = len(targets)
+
+    @filt.setter
+    def filt(self, filt):
+        if filt is not None:
+            assert isinstance(filt, dict)
+            assert (self._targets in filt)
+        self._filt = filt
 
     def purified_e(self, maps):
         """Get pure E mode scalar map with B2E leakage corrected.
@@ -302,6 +332,44 @@ class pstimator(object):
             bpws[self._psbin * i + self._lmin: self._psbin * (i+1) + self._lmin] = i
             i += 1
         return nmt.NmtBin(nside=self._nside, bpws=bpws, ells=ells, weights=weights, is_Dell=True, lmax=self._lmax)
+
+    def bpconvert(self, ps):
+        """
+        "top-hat" window function matrix
+        for converting PS into band-powers
+        
+        Return
+        ----------
+            band-power converting matrix of shape (# eff-ell, # lmax)
+        """
+        assert (len(ps) == self._lmax - self._lmin)
+        bp = np.zeros(self._nmode,dtype=np.float32)
+        for i in range(len(bp)):  # ps band window
+            lrange = np.array(self._b.get_ell_list(i))
+            w = np.array(self._b.get_weight_list(i))
+            bp[i] = (w*0.5*lrange*(lrange+1)/np.pi).dot(ps[lrange-self._lmin])
+        return bp
+
+    def filtrans(self, bp):
+        """
+        apply filtering effect on band-powers.
+
+        Parameters
+        ----------
+        
+        bp : numpy.ndarray
+            band-power in shape (# targets, # modes).
+
+        Returns
+        -------
+            filtered band-power in shape (# targets, # modes).
+        """
+        if self._filt is None:
+            return bp
+        assert (bp.shape == (self._ntarget,self._nmode))
+        transmat = self._filt[self._targets]
+        assert (transmat.shape[0] == (bp.shape[0]*bp.shape[1]))
+        return (transmat.dot(bp.reshape(-1,1))).reshape(self._ntarget,-1)
 
     def autoWSP(self, maps, fwhms=None):
         assert isinstance(maps, np.ndarray)

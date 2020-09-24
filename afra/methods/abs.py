@@ -78,6 +78,8 @@ class abssep(object):
         self._lsize = signal.shape[0]  # number of angular modes
         self._fsize = signal.shape[1]  # number of frequency bands
         assert (signal.shape[1] == signal.shape[2])
+        if (np.isnan(signal).any()):
+            raise ValueError('encounter nan')
         self._signal = signal.copy()
 
     @noise.setter
@@ -89,6 +91,8 @@ class abssep(object):
             assert (noise.shape[0] == self._lsize)
             assert (noise.shape[1] == self._fsize)
             assert (noise.shape[1] == noise.shape[2])
+            if (np.isnan(noise).any()):
+                raise ValueError('encounter nan')
             self._noise = noise.copy()
 
     @sigma.setter
@@ -99,6 +103,8 @@ class abssep(object):
             assert isinstance(sigma, np.ndarray)
             assert (sigma.shape[0] == self._lsize)
             assert (sigma.shape[1] == self._fsize)
+            if (np.isnan(sigma).any()):
+                raise ValueError('encounter nan')
             self._sigma = sigma.copy()
 
     @shift.setter

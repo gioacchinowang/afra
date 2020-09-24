@@ -46,7 +46,7 @@ class abspipe(object):
         # debug mode
         self.debug = False
         # ps estimator
-        self._est = None
+        self._estimator = None
 
     @property
     def signals(self):
@@ -187,7 +187,7 @@ class abspipe(object):
         assert (psbin > 0)
         assert (aposcale > 0)
         # init PS estimator
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmin=lmin,lmax=lmax,targets=self._targets)
+        self._estimator = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmin=lmin,lmax=lmax,targets=self._targets)
         # method selection
         return self._methodict[self._noise_flag](shift, threshold)
 
@@ -199,13 +199,13 @@ class abspipe(object):
         -------
         angular modes, requested PS, eigen info
         """
-        modes = self._est.modes
+        modes = self._estimator.modes
         # prepare total signals PS in the shape required by ABS method
         signal_ps = np.zeros((self._ntarget,len(modes),self._nfreq,self._nfreq),dtype=np.float32)
         for i in range(self._nfreq):
             _fi = self._freqlist[i]
             # auto correlation
-            stmp = self._est.autoBP(self._signals[_fi],fwhms=self._fwhms[_fi])
+            stmp = self._estimator.autoBP(self._signals[_fi],fwhms=self._fwhms[_fi])
             # assign results
             for t in range(self._ntarget):
                 for k in range(len(modes)):
@@ -213,7 +213,7 @@ class abspipe(object):
             # cross correlation
             for j in range(i+1,self._nfreq):
                 _fj = self._freqlist[j]
-                stmp = self._est.crosBP(np.r_[self._signals[_fi],self._signals[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                stmp = self._estimator.crosBP(np.r_[self._signals[_fi],self._signals[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
                 for t in range(self._ntarget):
                     for k in range(len(modes)):
                         signal_ps[t,k,i,j] = stmp[1+t][k]
@@ -239,13 +239,13 @@ class abspipe(object):
         """
         # run trial PS estimations for workspace template
         wsp_dict = dict()
-        modes = self._est.modes
+        modes = self._estimator.modes
         for i in range(self._nfreq):
             _fi = self._freqlist[i]
-            wsp_dict[(i,i)] = self._est.autoWSP(self._signals[_fi],fwhms=self._fwhms[_fi])
+            wsp_dict[(i,i)] = self._estimator.autoWSP(self._signals[_fi],fwhms=self._fwhms[_fi])
             for j in range(i+1,self._nfreq):
                 _fj = self._freqlist[j]
-                wsp_dict[(i,j)] = self._est.crosWSP(np.r_[self._signals[_fi],self._signals[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                wsp_dict[(i,j)] = self._estimator.crosWSP(np.r_[self._signals[_fi],self._signals[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
         # allocate
         noise_ps = np.zeros((self._nsamp,self._ntarget,len(modes),self._nfreq,self._nfreq),dtype=np.float32)
         signal_ps = np.zeros((self._nsamp,self._ntarget,len(modes),self._nfreq,self._nfreq),dtype=np.float32)
@@ -254,8 +254,8 @@ class abspipe(object):
             for i in range(self._nfreq):
                 _fi = self._freqlist[i]
                 # auto correlation
-                ntmp = self._est.autoBP(self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
-                stmp = self._est.autoBP(self._signals[_fi]+self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
+                ntmp = self._estimator.autoBP(self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
+                stmp = self._estimator.autoBP(self._signals[_fi]+self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
                 # assign results
                 for t in range(self._ntarget):
                     for k in range(len(modes)):
@@ -265,8 +265,8 @@ class abspipe(object):
                 for j in range(i+1,self._nfreq):
                     _fj = self._freqlist[j]
                     # cross correlation
-                    ntmp = self._est.crosBP(np.r_[self._noises[_fi][s],self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
-                    stmp = self._est.crosBP(np.r_[self._signals[_fi]+self._noises[_fi][s],self._signals[_fj]+self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                    ntmp = self._estimator.crosBP(np.r_[self._noises[_fi][s],self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                    stmp = self._estimator.crosBP(np.r_[self._signals[_fi]+self._noises[_fi][s],self._signals[_fj]+self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
                     for t in range(self._ntarget):
                         for k in range(len(modes)):
                             noise_ps[s,t,k,i,j] = ntmp[1+t][k]

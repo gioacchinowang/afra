@@ -7,7 +7,7 @@ NSIDE = 128
 
 
 MODEL = ['s1','d1']  # pysm3 model name list
-FREQ = [30, 95, 150, 353]
+FREQ = [23, 95, 150, 353]
 
 sky = pysm.Sky(nside=NSIDE, preset_strings=MODEL)
 mname = '_'

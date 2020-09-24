@@ -120,7 +120,7 @@ def vec_hl(cps,cps_hat,cps_fid):
     ntype = cps.shape[-4]
     dof = nfreq*(nfreq+1)//2
     triu_idx = np.triu_indices(nfreq)
-    rslt = np.zeros(ntype*nmode*dof)
+    rslt = np.ones(ntype*nmode*dof)
     for t in range(ntype):
         for l in range(nmode):
             c_h = cps_hat[t,l]
@@ -128,42 +128,19 @@ def vec_hl(cps,cps_hat,cps_fid):
             c_inv = sqrtm(np.linalg.pinv(cps[t,l]))
             res = np.dot(np.conjugate(c_inv), np.dot(c_h, c_inv))
             [d, u] = np.linalg.eigh(res)
-            #assert (all(d>=0))
-            # real symmetric matrices are diagnalized by orthogonal matrices (M^t M = 1)
-            # this makes a diagonal matrix by applying g(x) to the eigenvalues, equation 10 in Barkats et al
-            gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
-            # multiplying from right to left
-            x = np.dot(gd, np.dot(np.transpose(u),c_f))
-            x = np.dot(c_f, np.dot(u,x))
-            rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = x[triu_idx]
+            if (any(d<0)):
+                rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] *= np.nan_to_num(np.inf)
+            else:
+                # real symmetric matrices are diagnalized by orthogonal matrices (M^t M = 1)
+                # this makes a diagonal matrix by applying g(x) to the eigenvalues, equation 10 in Barkats et al
+                gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
+                # multiplying from right to left
+                x = np.dot(gd, np.dot(np.transpose(u),c_f))
+                x = np.dot(np.conjugate(c_f), np.dot(np.conjugate(u),x))
+                #if (np.isnan(x).any()):
+                #    raise ValueError('encounter nan')
+                rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = x[triu_idx]
     return rslt
-
-
-def bp_window(ps_estimator):
-    """
-    "top-hat" window function matrix 
-    for converting PS into band-powers
-    
-    Parameters
-    ----------
-    
-    ps_estimator
-        the wrapped-in power-spectrum estimator
-    """
-    assert isinstance(ps_estimator, pstimator)
-    ntarget = len(ps_estimator.targets)
-    nmode = len(ps_estimator.modes)
-    nps = 3*ps_estimator.nside
-    compress = np.zeros((ntarget*nmode,ntarget*nps))
-    for t0 in range(ntarget):
-        for i in range(nmode):  # ps band window
-            lrange = np.array(ps_estimator._b.get_ell_list(i))
-            factor = 0.5*lrange*(lrange+1)/np.pi
-            w = np.array(ps_estimator._b.get_weight_list(i))
-            compress[t0*nmode+i,lrange+t0*nps] = w*factor
-        #for t1 in range(t0+1,ntarget):
-        #    pass
-    return compress
 
 
 def Mbpconv_t(nside,mask=None,ensemble=10):

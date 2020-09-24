@@ -18,19 +18,15 @@ from afra.tools.ps_estimator import pstimator
 @icy
 class fgmodel(object):
 
-    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
+    def __init__(self, freqlist, estimator, template_ps=None):
         self.freqlist = freqlist
-        self.targets = targets
-        self.mask = mask
-        self.aposcale = aposcale
-        self.psbin = psbin
-        self.templates = templates
-        self.template_fwhms = template_fwhms
-        self._est = pstimator(nside=self._nside,mask=self._mask,aposcale=self._aposcale,psbin=self._psbin,lmin=lmin,lmax=lmax,targets=self._targets)
-        self._modes = self._est.modes  # discard 1st multipole bin
+        self.estimator = estimator
+        self.template_ps = template_ps
         self._params = dict()  # base class holds empty dict
-        self._params_dft = dict()
-        self._template_ps = dict()
+        self._paramlist = list()
+        self._blacklist = list()
+        self._paramrange = dict()
+        self._paramdft = dict()
 
     @property
     def freqlist(self):
@@ -41,40 +37,12 @@ class fgmodel(object):
         return self._nfreq
 
     @property
-    def targets(self):
-        return self._targets
+    def estimator(self):
+        return self._estimator
 
     @property
-    def ntarget(self):
-        return self._ntarget
-
-    @property
-    def modes(self):
-        return self._modes
-
-    @property
-    def npix(self):
-        return self._npix
-
-    @property
-    def nside(self):
-        return self._nside
-
-    @property
-    def mask(self):
-        return self._mask
-
-    @property
-    def aposcale(self):
-        return self._aposcale
-
-    @property
-    def psbin(self):
-        return self._psbin
-
-    @property
-    def templates(self):
-        return self._templates
+    def template_ps(self):
+        return self._template_ps
 
     @property
     def template_freqlist(self):
@@ -85,32 +53,24 @@ class fgmodel(object):
         return self._template_nfreq
 
     @property
-    def template_fwhms(self):
-        return self._template_fwhms
-
-    @property
     def params(self):
         return self._params
 
     @property
-    def param_dft(self):
-        return self._param_dft
+    def paramdft(self):
+        return self._paramdft
 
     @property
-    def param_list(self):
-        return self._param_list
+    def paramlist(self):
+        return self._paramlist
 
     @property
-    def est(self):
-        return self._est
+    def blacklist(self):
+        return self._blacklist
 
     @property
-    def template_ps(self):
-        return self._template_ps
-
-    @template_ps.setter
-    def template_ps(self, template_ps):
-        assert isinstance(template_ps, dict)
+    def paramrange(self):
+        return self._paramrange
 
     @freqlist.setter
     def freqlist(self, freqlist):
@@ -118,125 +78,89 @@ class fgmodel(object):
         self._freqlist = freqlist
         self._nfreq = len(self._freqlist)
 
-    @targets.setter
-    def targets(self, targets):
-        assert isinstance(targets, str)
-        self._targets = targets
-        self._ntarget = len(targets)
+    @estimator.setter
+    def estimator(self, estimator):
+        assert isinstance(estimator, pstimator)
+        self._estimator = estimator
 
-    @aposcale.setter
-    def aposcale(self, aposcale):
-        self._aposcale = aposcale
-
-    @psbin.setter
-    def psbin(self, psbin):
-        self._psbin = psbin
-
-    @mask.setter
-    def mask(self, mask):
-        assert isinstance(mask, np.ndarray)
-        self._mask = mask.copy()
-        self._npix = len(mask)
-        self._nside = int(np.sqrt(self._npix//12))
-
-    @templates.setter
-    def templates(self, templates):
+    @template_ps.setter
+    def template_ps(self, template_ps):
         """template maps at two frequency bands"""
-        if templates is not None:
-            assert isinstance(templates, dict)
-            self._template_freqlist = sorted(templates.keys())
-            self._template_nfreq = len(templates)
+        if template_ps is not None:
+            assert isinstance(template_ps, dict)
+            self._template_freqlist = sorted(template_ps.keys())
+            self._template_nfreq = len(template_ps)
             assert (self._template_nfreq < 3)
-            assert (templates[next(iter(templates))].shape == (3,self._npix))
+            assert (template_ps[next(iter(template_ps))].shape == (self._estimator._ntarget,self._estimator._nmode))
             self._template_flag = True
-            self._templates = templates
-            #apply mask
-            for key in templates.keys():
-                self._templates[key][:,self._mask<1.] = 0.
+            self._template_ps = template_ps
         else:
             self._template_flag = False
-            self._templates = None
-
-    @template_fwhms.setter
-    def template_fwhms(self, template_fwhms):
-        """template maps' fwhms"""
-        if template_fwhms is not None:
-            assert isinstance(template_fwhms, dict)
-            assert (template_fwhms.keys() == self._templates.keys())
-            self._template_fwhms = template_fwhms
-        else:
-            self._template_fwhms = dict()
-            if self._template_flag:
-                for name in self._template_freqlist:
-                    self._template_fwhms[name] = None
+            self._template_ps = None
+            self._template_freqlist = list()
 
     def reset(self, pdict):
         """(re)set parameters"""
         assert isinstance(pdict, dict)
         for name in pdict.keys():
-            if name in self.param_list:
+            if name in self.paramlist:
                 self._params.update({name: pdict[name]})
 
     def i2cmb(self,freq,ref):
-            """Brightness flux to CMB temperature unit converting ratio"""
-            hGk_t0 = 0.04799340833334541/2.73  # h*GHz/k_B/T0
-            p = hGk_t0*freq
-            p0 = hGk_t0*ref
-            return (ref/freq)**4*np.exp(p0-p)*(np.exp(p)-1.)**2/(np.exp(p0)-1.)**2
+        """Brightness flux to CMB temperature unit converting ratio"""
+        hGk_t0 = 0.04799340833334541/2.73  # h*GHz/k_B/T0
+        p = hGk_t0*freq
+        p0 = hGk_t0*ref
+        return (ref/freq)**4*np.exp(p0-p)*(np.exp(p)-1.)**2/(np.exp(p0)-1.)**2
 
 
 @icy
 class syncmodel(fgmodel):
     
-    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
-        super(syncmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
-        assert (self._template_nfreq == 1)
-        # # setup self.params' keys by param_list and content by param_dft
-        self.reset(self.default)
+    def __init__(self, freqlist, estimator, template_ps=None):
+        super(syncmodel, self).__init__(freqlist,estimator,template_ps)
+        self._paramlist = self.initlist()
+        self._paramrange = self.initrange()
+        self._paramdft = self.initdft()
         # calculate template PS
         if self._template_flag:
-            for ref in self._template_freqlist:
-                self.template_ps[ref] = self._est.autoBP(self._templates[ref],fwhms=self._template_fwhms[ref])
+            assert (self._template_nfreq == 1)
+        else:
+            self._template_freqlist = [23]
 
-    @property
-    def param_list(self):
+    def initlist(self):
         """parameters are set as
         - bandpower "bp_s_x", exponential index of amplitude at reference frequency x
         - bandpower frequency scaling parameters
         """
         plist = list()
         if not self._template_flag:
-            prefix = list()
-            for t in self._targets:
-                prefix.append('bp_s_'+t+'_')
-            for i in prefix:
-            	for j in range(len(self._modes)):
-                	plist.append(i+str(self._modes[j]))
+            for t in self._estimator._targets:
+                plist.append('A_s_'+t)
+                plist.append('alpha_s_'+t)
         plist.append('beta_s')
         return plist
 
-    @property
-    def param_range(self):
+    def initrange(self):
         """parameter sampling range,
         in python dict
         {param name : [low limit, high limit]
         """
         prange = dict()
-        _tmp = self.param_list
         if not self._template_flag:
-            for i in _tmp[:-1]:
-                prange[i] = [0.,1.e+4]
-        prange['beta_s'] = [-5.,0.]
+            for t in self._estimator._targets:
+                prange['A_s_'+t] = [0.,1.0e+4]
+                prange['alpha_s_'+t] = [-5.,5.]
+        prange['beta_s'] = [-5.,0]
         return prange
 
-    @property
-    def default(self):
+    def initdft(self):
         """register default parameter values
         """
-        prange = self.param_range
         pdft = dict()
-        for key in prange.keys():
-            pdft[key] = 0.5*(prange[key][0] + prange[key][1])
+        for key in self._paramrange.keys():
+            pdft[key] = 0.5*(self._paramrange[key][0] + self._paramrange[key][1])
+        self.reset(pdft)
         return pdft
 
     def bandpower(self):
@@ -245,76 +169,85 @@ class syncmodel(fgmodel):
         """
         beta_val_s = self.params['beta_s']
         ref = self._template_freqlist[0]
+        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
         # estimate bandpower from templates
-        ps_s = self._template_ps[ref]
-        dl = np.zeros((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
-        for t in range(self._ntarget):
-            for l in range(len(self._modes)):
-                bp_s = ps_s[t+1][l]
-                for i in range(self._nfreq):
-                    f_ratio_i = (self._freqlist[i]/ref)**beta_val_s
-                    c_ratio_i = self.i2cmb(self._freqlist[i],ref)
-                    dl[t,l,i,i] = bp_s * (f_ratio_i*c_ratio_i)**2
-                    for j in range(i+1,self._nfreq):
-                        f_ratio_j = (self._freqlist[j]/ref)**beta_val_s
-                        c_ratio_j = self.i2cmb(self._freqlist[j],ref)
-                        dl[t,l,i,j] = bp_s * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
-                        dl[t,l,j,i] = dl[t,l,i,j]
+        if self._template_flag:
+            ps_s = self._template_ps[ref]
+            for t in range(self._estimator._ntarget):
+                for l in range(self._estimator._nmode):
+                    bp_s = ps_s[t,l]
+                    for i in range(self._nfreq):
+                        f_ratio_i = (self._freqlist[i]/ref)**beta_val_s
+                        c_ratio_i = self.i2cmb(self._freqlist[i],ref)
+                        dl[t,l,i,i] = bp_s * (f_ratio_i*c_ratio_i)**2
+                        for j in range(i+1,self._nfreq):
+                            f_ratio_j = (self._freqlist[j]/ref)**beta_val_s
+                            c_ratio_j = self.i2cmb(self._freqlist[j],ref)
+                            dl[t,l,i,j] = bp_s * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+                            dl[t,l,j,i] = dl[t,l,i,j]
+        else:
+            for t in range(self._estimator._ntarget):
+                for l in range(self._estimator._nmode):
+                    bp_s = self._params['A_s_'+self._estimator._targets[t]]*(np.array(self._estimator._modes[l])/80.)**self._params['alpha_s_'+self._estimator._targets[t]]
+                    for i in range(self._nfreq):
+                        f_ratio_i = (self._freqlist[i]/ref)**beta_val_s
+                        c_ratio_i = self.i2cmb(self._freqlist[i],ref)
+                        dl[t,l,i,i] = bp_s * (f_ratio_i*c_ratio_i)**2
+                        for j in range(i+1,self._nfreq):
+                            f_ratio_j = (self._freqlist[j]/ref)**beta_val_s
+                            c_ratio_j = self.i2cmb(self._freqlist[j],ref)
+                            dl[t,l,i,j] = bp_s * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+                            dl[t,l,j,i] = dl[t,l,i,j]
         return dl
 
 
 @icy
 class dustmodel(fgmodel):
    
-    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
-        super(dustmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
-        assert (self._template_nfreq == 1)
-        # setup self.params' keys by param_list and content by param_dft
-        self.reset(self.default)
+    def __init__(self, freqlist, estimator, template_ps=None):
+        super(dustmodel, self).__init__(freqlist,estimator,template_ps)
+        self._paramlist = self.initlist()
+        self._paramrange = self.initrange()
+        self._paramdft = self.initdft()
         # calculate template PS
         if self._template_flag:
-            for ref in self._template_freqlist:
-                self.template_ps[ref] = self._est.autoBP(self._templates[ref],fwhms=self._template_fwhms[ref])
+            assert (self._template_nfreq == 1)
+        else:
+            self._template_freqlist = [353.]
 
-    @property
-    def param_list(self):
+    def initlist(self):
         """parameters are set as
         - bandpower "bp_s_x", exponential index of amplitude at reference frequency x
         - bandpower frequency scaling parameters
         """
         plist = list()
         if not self._template_flag:
-            prefix = list()
-            for t in self._targets:
-                prefix.append('bp_d_'+t+'_')
-            for i in prefix:
-            	for j in range(len(self._modes)):
-                	plist.append(i+str(self._modes[j]))
+            for t in self._estimator._targets:
+                plist.append('A_d_'+t)
+                plist.append('alpha_d_'+t)
         plist.append('beta_d')
         return plist
 
-    @property
-    def param_range(self):
+    def initrange(self):
         """parameter sampling range,
         in python dict
         {param name : [low limit, high limit]
         """
         prange = dict()
-        _tmp = self.param_list
         if not self._template_flag:
-            for i in _tmp[:-1]:
-                prange[i] = [0.,1.e+4]
+            for t in self._estimator._targets:
+                prange['A_d_'+t] = [0.,1.0e+4]
+                prange['alpha_d_'+t] = [-5.,5.]
         prange['beta_d'] = [0.,5.]
         return prange
 
-    @property
-    def default(self):
+    def initdft(self):
         """register default parameter values
         """
-        prange = self.param_range
         pdft = dict()
-        for key in prange.keys():
-            pdft[key] = 0.5*(prange[key][0] + prange[key][1])
+        for key in self._paramrange.keys():
+            pdft[key] = 0.5*(self._paramrange[key][0] + self._paramrange[key][1])
+        self.reset(pdft)
         return pdft
 
     def bratio(self,freq,ref):
@@ -327,81 +260,93 @@ class dustmodel(fgmodel):
         """
         beta_val_d = self.params['beta_d']
         ref = self._template_freqlist[0]
-        ps_d = self._template_ps[ref]
+        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
         # estimate bandpower from templates
-        dl = np.zeros((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
-        for t in range(self._ntarget):
-            for l in range(len(self._modes)):
-                bp_d = ps_d[t+1][l]
-                for i in range(self._nfreq):
-                    f_ratio_i = (self._freqlist[i]/ref)**beta_val_d*self.bratio(self._freqlist[i],ref)
-                    c_ratio_i = self.i2cmb(self._freqlist[i],ref)
-                    dl[t,l,i,i] = bp_d * (f_ratio_i*c_ratio_i)**2
-                    for j in range(i+1,self._nfreq):
-                        f_ratio_j = (self._freqlist[j]/ref)**beta_val_d*self.bratio(self._freqlist[j],ref)
-                        c_ratio_j = self.i2cmb(self._freqlist[j],ref)
-                        dl[t,l,i,j] = bp_d * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
-                        dl[t,l,j,i] = dl[t,l,i,j]
+        if self._template_flag:
+            ps_d = self._template_ps[ref]
+            for t in range(self._estimator._ntarget):
+                for l in range(self._estimator._nmode):
+                    bp_d = ps_d[t,l]
+                    for i in range(self._nfreq):
+                        f_ratio_i = (self._freqlist[i]/ref)**beta_val_d*self.bratio(self._freqlist[i],ref)
+                        c_ratio_i = self.i2cmb(self._freqlist[i],ref)
+                        dl[t,l,i,i] = bp_d * (f_ratio_i*c_ratio_i)**2
+                        for j in range(i+1,self._nfreq):
+                            f_ratio_j = (self._freqlist[j]/ref)**beta_val_d*self.bratio(self._freqlist[j],ref)
+                            c_ratio_j = self.i2cmb(self._freqlist[j],ref)
+                            dl[t,l,i,j] = bp_d * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+                            dl[t,l,j,i] = dl[t,l,i,j]
+        else:
+            for t in range(self._estimator._ntarget):
+                for l in range(self._estimator._nmode):
+                    bp_d = self._params['A_d_'+self._estimator._targets[t]]*(np.array(self._estimator._modes[l])/80.)**self._params['alpha_d_'+self._estimator._targets[t]]
+                    for i in range(self._nfreq):
+                        f_ratio_i = (self._freqlist[i]/ref)**beta_val_d*self.bratio(self._freqlist[i],ref)
+                        c_ratio_i = self.i2cmb(self._freqlist[i],ref)
+                        dl[t,l,i,i] = bp_d * (f_ratio_i*c_ratio_i)**2
+                        for j in range(i+1,self._nfreq):
+                            f_ratio_j = (self._freqlist[j]/ref)**beta_val_d*self.bratio(self._freqlist[j],ref)
+                            c_ratio_j = self.i2cmb(self._freqlist[j],ref)
+                            dl[t,l,i,j] = bp_d * (f_ratio_i*f_ratio_j*c_ratio_i*c_ratio_j)
+                            dl[t,l,j,i] = dl[t,l,i,j]
         return dl
 
 
 @icy
 class syncdustmodel(fgmodel):
 
-    def __init__(self, freqlist, targets, mask, aposcale, psbin, lmin=None, lmax=None, templates=None, template_fwhms=None):
-        super(syncdustmodel, self).__init__(freqlist,targets,mask,aposcale,psbin,lmin,lmax,templates,template_fwhms)
-        assert (self._template_nfreq == 2)
-        # setup self.params' keys by param_list and content by param_dft
-        self.reset(self.default)
+    def __init__(self, freqlist, estimator, template_ps=None):
+        super(syncdustmodel, self).__init__(freqlist,estimator,template_ps)
+        self._paramlist = self.initlist()
+        self._paramrange = self.initrange()
+        self._paramdft = self.initdft()
         # calculate template PS
         if self._template_flag:
-            for ref in self._template_freqlist:
-                self.template_ps[ref] = self._est.autoBP(self._templates[ref],fwhms=self._template_fwhms[ref])
+            assert (self._template_nfreq == 2)
+        else:
+            self._template_freqlist = [23.,353.]
 
-    @property
-    def param_list(self):
+    def initlist(self):
         """parameters are set as
         - bandpower "bp_s_x", exponential index of amplitude at reference frequency x
         - bandpower frequency scaling parameters
         """
         plist = list()
         if not self._template_flag:
-            prefix = list()
-            for t in self._targets:
-                prefix.append('bp_s_'+t+'_')
-                prefix.append('bp_d_'+t+'_')
-            for i in prefix:
-            	for j in range(len(self._modes)):
-                	plist.append(i+str(self._modes[j]))
-        plist.append('beta_s')
+            for t in self._estimator._targets:
+                plist.append('A_d_'+t)
+                plist.append('A_s_'+t)
+                plist.append('alpha_d_'+t)
+                plist.append('alpha_s_'+t)
         plist.append('beta_d')
+        plist.append('beta_s')
         plist.append('rho')
         return plist
 
-    @property
-    def param_range(self):
+    def initrange(self):
         """parameter sampling range,
         in python dict
         {param name : [low limit, high limit]
         """
         prange = dict()
-        _tmp = self.param_list
         if not self._template_flag:
-            for i in _tmp[:-3]:
-                prange[i] = [0.,1.e+4]
-        prange['beta_s'] = [-5.,0.]
+            for t in self._estimator._targets:
+                prange['A_d_'+t] = [0.,1.0e+4]
+                prange['A_s_'+t] = [0.,1.0e+4]
+                prange['alpha_d_'+t] = [-5.,5.]
+                prange['alpha_s_'+t] = [-5.,5.]
         prange['beta_d'] = [0.,5.]
-        prange['rho'] = [-1.,1.]
+        prange['beta_s'] = [-5.,0.]
+        prange['rho'] = [-0.5,0.5]
         return prange
 
-    @property
-    def default(self):
+    def initdft(self):
         """register default parameter values
         """
-        prange = self.param_range
         pdft = dict()
-        for key in prange.keys():
-            pdft[key] = 0.5*(prange[key][0] + prange[key][1])
+        for key in self._paramrange.keys():
+            pdft[key] = 0.5*(self._paramrange[key][0] + self._paramrange[key][1])
+        self.reset(pdft)
         return pdft
 
     def bratio(self,freq,ref):
@@ -415,30 +360,55 @@ class syncdustmodel(fgmodel):
         beta_val_s = self.params['beta_s']
         beta_val_d = self.params['beta_d']
         rho = self.params['rho']
-        ref = self._template_freqlist
-        ps_s = self._template_ps[ref[0]]
-        ps_d = self._template_ps[ref[1]]
+        ref_s = self._template_freqlist[0]
+        ref_d = self._template_freqlist[1]
+        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
         # estimate bandpower from templates
-        dl = np.zeros((self._ntarget,len(self._modes),self._nfreq,self._nfreq),dtype=np.float32)
-        for t in range(self._ntarget):
-            for l in range(len(self._modes)):
-                bp_s = ps_s[t+1][l]
-                bp_d = ps_d[t+1][l]
-                for i in range(self._nfreq):
-                    f_ratio_is = (self._freqlist[i]/ref[0])**beta_val_s
-                    f_ratio_id = (self._freqlist[i]/ref[1])**beta_val_d*self.bratio(self._freqlist[i],ref[1])
-                    c_ratio_is = self.i2cmb(self._freqlist[i],ref[0])
-                    c_ratio_id = self.i2cmb(self._freqlist[i],ref[1])
-                    dl[t,l,i,i] = bp_s * (f_ratio_is*c_ratio_is)**2
-                    dl[t,l,i,i] += bp_d * (f_ratio_id*c_ratio_id)**2
-                    dl[t,l,i,i] += rho * np.sqrt(bp_s*bp_d) * (f_ratio_is*f_ratio_id*c_ratio_is*c_ratio_id)
-                    for j in range(i+1,self._nfreq):
-                        f_ratio_js = (self._freqlist[j]/ref[0])**beta_val_s
-                        f_ratio_jd = (self._freqlist[j]/ref[1])**beta_val_d*self.bratio(self._freqlist[j],ref[1])
-                        c_ratio_js = self.i2cmb(self._freqlist[j],ref[0])
-                        c_ratio_jd = self.i2cmb(self._freqlist[j],ref[1])
-                        dl[t,l,i,j] = bp_s * (f_ratio_is*c_ratio_is*f_ratio_js*c_ratio_js)
-                        dl[t,l,i,j] += bp_d * (f_ratio_id*c_ratio_id*f_ratio_jd*c_ratio_jd)
-                        dl[t,l,i,j] += rho * np.sqrt(bp_s*bp_d) * ( f_ratio_is*c_ratio_is*f_ratio_jd*c_ratio_jd + f_ratio_id*c_ratio_id*f_ratio_js*c_ratio_js  )
-                        dl[t,l,j,i] = dl[t,l,i,j]
+        if self._template_flag:
+            ps_s = self._template_ps[ref_s]
+            ps_d = self._template_ps[ref_d]
+            for t in range(self._estimator._ntarget):
+                for l in range(self._estimator._nmode):
+                    bp_s = ps_s[t,l]
+                    bp_d = ps_d[t,l]
+                    bp_c = bp_s*bp_d
+                    for i in range(self._nfreq):
+                        f_ratio_is = (self._freqlist[i]/ref_s)**beta_val_s
+                        f_ratio_id = (self._freqlist[i]/ref_d)**beta_val_d*self.bratio(self._freqlist[i],ref_d)
+                        c_ratio_is = self.i2cmb(self._freqlist[i],ref_s)
+                        c_ratio_id = self.i2cmb(self._freqlist[i],ref_d)
+                        dl[t,l,i,i] = bp_s * (f_ratio_is*c_ratio_is)**2
+                        dl[t,l,i,i] += bp_d * (f_ratio_id*c_ratio_id)**2
+                        dl[t,l,i,i] += rho * np.sign(bp_c) * np.sqrt(np.fabs(bp_c)) * (f_ratio_is*f_ratio_id*c_ratio_is*c_ratio_id)
+                        for j in range(i+1,self._nfreq):
+                            f_ratio_js = (self._freqlist[j]/ref_s)**beta_val_s
+                            f_ratio_jd = (self._freqlist[j]/ref_d)**beta_val_d*self.bratio(self._freqlist[j],ref_d)
+                            c_ratio_js = self.i2cmb(self._freqlist[j],ref_s)
+                            c_ratio_jd = self.i2cmb(self._freqlist[j],ref_d)
+                            dl[t,l,i,j] = bp_s * (f_ratio_is*c_ratio_is*f_ratio_js*c_ratio_js)
+                            dl[t,l,i,j] += bp_d * (f_ratio_id*c_ratio_id*f_ratio_jd*c_ratio_jd)
+                            dl[t,l,i,j] += rho * np.sign(bp_c) * np.sqrt(np.fabs(bp_c)) * ( f_ratio_is*c_ratio_is*f_ratio_jd*c_ratio_jd + f_ratio_id*c_ratio_id*f_ratio_js*c_ratio_js  )
+                            dl[t,l,j,i] = dl[t,l,i,j]
+        else:
+            for t in range(self._estimator._ntarget):
+                for l in range(self._estimator._nmode):
+                    bp_s = self._params['A_s_'+self._estimator._targets[t]]*(np.array(self._estimator._modes[l])/80.)**self._params['alpha_s_'+self._estimator._targets[t]]
+                    bp_d = self._params['A_d_'+self._estimator._targets[t]]*(np.array(self._estimator._modes[l])/80.)**self._params['alpha_d_'+self._estimator._targets[t]]
+                    for i in range(self._nfreq):
+                        f_ratio_is = (self._freqlist[i]/ref_s)**beta_val_s
+                        f_ratio_id = (self._freqlist[i]/ref_d)**beta_val_d*self.bratio(self._freqlist[i],ref_d)
+                        c_ratio_is = self.i2cmb(self._freqlist[i],ref_s)
+                        c_ratio_id = self.i2cmb(self._freqlist[i],ref_d)
+                        dl[t,l,i,i] = bp_s * (f_ratio_is*c_ratio_is)**2
+                        dl[t,l,i,i] += bp_d * (f_ratio_id*c_ratio_id)**2
+                        dl[t,l,i,i] += rho * np.sqrt(bp_s*bp_d) * (f_ratio_is*f_ratio_id*c_ratio_is*c_ratio_id)
+                        for j in range(i+1,self._nfreq):
+                            f_ratio_js = (self._freqlist[j]/ref_s)**beta_val_s
+                            f_ratio_jd = (self._freqlist[j]/ref_d)**beta_val_d*self.bratio(self._freqlist[j],ref_d)
+                            c_ratio_js = self.i2cmb(self._freqlist[j],ref_s)
+                            c_ratio_jd = self.i2cmb(self._freqlist[j],ref_d)
+                            dl[t,l,i,j] = bp_s * (f_ratio_is*c_ratio_is*f_ratio_js*c_ratio_js)
+                            dl[t,l,i,j] += bp_d * (f_ratio_id*c_ratio_id*f_ratio_jd*c_ratio_jd)
+                            dl[t,l,i,j] += rho * np.sqrt(bp_s*bp_d) * ( f_ratio_is*c_ratio_is*f_ratio_jd*c_ratio_jd + f_ratio_id*c_ratio_id*f_ratio_js*c_ratio_js  )
+                            dl[t,l,j,i] = dl[t,l,i,j]
         return dl
