@@ -9,7 +9,7 @@ from afra.tools.icy_decorator import icy
 class abspipe(object):
     """The ABS pipeline class."""
 
-    def __init__(self, signals, noises=None, mask=None, fwhms=None, targets='T'):
+    def __init__(self, signals, noises=None, mask=None, fwhms=None, targets='T', filt=None):
         """
         The ABS pipeline for extracting CMB power-spectrum band power,
         according to given measured sky maps at various frequency bands.
@@ -34,6 +34,9 @@ class abspipe(object):
         
         targets : str
             Choose among 'T', 'E', 'B', 'EB', 'TEB'.
+
+        filt : dict()
+            filtering-correction matrix for CMB (from filted to original)
         """
         self.signals = signals
         self.noises = noises
@@ -47,6 +50,8 @@ class abspipe(object):
         self.debug = False
         # ps estimator
         self._estimator = None
+        # filtering matrix dict
+        self.filt = filt
 
     @property
     def signals(self):
@@ -91,6 +96,10 @@ class abspipe(object):
     @property
     def fwhms(self):
         return self._fwhms
+
+    @property
+    def filt(self):
+        return self._filt
 
     @signals.setter
     def signals(self, signals):
@@ -157,6 +166,13 @@ class abspipe(object):
         self._targets = targets
         self._ntarget = len(targets)
 
+    @filt.setter
+    def filt(self, filt):
+        if filt is not None:
+            assert isinstance(filt, dict)
+            assert (self._targets in filt)
+        self._filt = filt
+
     def run(self, aposcale, psbin, lmin=None, lmax=None, shift=None, threshold=None):
         """
         ABS pipeline class call function.
@@ -187,7 +203,7 @@ class abspipe(object):
         assert (psbin > 0)
         assert (aposcale > 0)
         # init PS estimator
-        self._estimator = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmin=lmin,lmax=lmax,targets=self._targets)
+        self._estimator = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmin=lmin,lmax=lmax,targets=self._targets,filt=self._filt)
         # method selection
         return self._methodict[self._noise_flag](shift, threshold)
 
@@ -226,7 +242,7 @@ class abspipe(object):
             rslt[t] = spt.run()
             if self._debug:
                 info[self._targets[t]] = spt.run_info()
-        return (np.r_[modes.reshape(1,-1), rslt], info)
+        return (np.r_[modes.reshape(1,-1), self._estimator.filtrans(rslt)], info)
 
     def method_noisy_raw(self):
         """
@@ -295,4 +311,5 @@ class abspipe(object):
                 rslt[s,t] = spt.run()
                 if self._debug:
                     info[self._targets[t]] = spt.run_info()
+            rslt[s] = self._estimator.filtrans(rslt[s])
         return (np.r_[modes.reshape(1,-1), np.mean(rslt,axis=0), np.std(rslt,axis=0)], info)

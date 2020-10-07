@@ -68,7 +68,7 @@ class tpfpipe(object):
             likelihood type, can be either 'gauss' or 'hl'.
 
         filt : dict()
-            filtering effect for CMB
+            filtering matrix for CMB (from original to filted)
         """
         # measurements
         self.signals = signals
