@@ -312,4 +312,6 @@ class abspipe(object):
                 if self._debug:
                     info[self._targets[t]] = spt.run_info()
             rslt[s] = self._estimator.filtrans(rslt[s])
-        return (np.r_[modes.reshape(1,-1), np.mean(rslt,axis=0), np.std(rslt,axis=0)], info)
+        if self._debug:
+            (np.r_[modes.reshape(1,-1), np.mean(rslt,axis=0), np.std(rslt,axis=0)], info, rslt)
+        return np.r_[modes.reshape(1,-1), np.mean(rslt,axis=0), np.std(rslt,axis=0)]
