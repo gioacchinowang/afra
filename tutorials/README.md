@@ -9,4 +9,3 @@
 - tutorial 06, template-fitting pre-preocess
 - tutorial 07, T mode template-fitting
 - tutorial 08, EB mode template-fitting
-- tutorial 09, pysm mock data fitting

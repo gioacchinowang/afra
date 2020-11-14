@@ -1,10 +1,10 @@
 """
 CMB models
 
-- cmbmodel
+- ncmbmodel
     cmb band-power model
     
-- cambmodel
+- acmbmodel
     cmb band-power model with camb template
 """
 import numpy as np
@@ -92,10 +92,10 @@ class bgmodel(object):
 
 
 @icy
-class cmbmodel(bgmodel):
+class ncmbmodel(bgmodel):
 
     def __init__(self, freqlist, estimator): 
-        super(cmbmodel, self).__init__(freqlist,estimator)
+        super(ncmbmodel, self).__init__(freqlist,estimator)
         self._paramlist = self.initlist()
         self._paramrange = self.initrange()
         self._paramdft = self.initdft()
@@ -155,11 +155,11 @@ class cmbmodel(bgmodel):
 
 
 @icy
-class cambmodel(bgmodel):
+class acmbmodel(bgmodel):
     """cmb model by camb"""
 
     def __init__(self, freqlist, estimator):
-        super(cambmodel, self).__init__(freqlist,estimator)
+        super(acmbmodel, self).__init__(freqlist,estimator)
         self._paramlist = self.initlist()
         self._paramrange = self.initrange()
         self._paramdft = self.initdft()

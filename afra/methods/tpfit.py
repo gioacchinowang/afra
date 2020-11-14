@@ -9,12 +9,13 @@ import dynesty
 @icy
 class tpfit(object):
 
-    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None):
+    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None, offset=None):
         # measurements
         self.signal = signal
         self.fiducial = fiducial
         self.noise = noise
         self.covariance = covariance
+        self.offset = offset
         # parameters
         self.params = dict()
         self.paramrange = dict()
@@ -38,6 +39,10 @@ class tpfit(object):
     @property
     def noise(self):
         return self._noise
+        
+    @property
+    def offset(self):
+        return self._offset
 
     @property
     def covariance(self):
@@ -92,6 +97,16 @@ class tpfit(object):
         if (np.isnan(noise).any()):
             raise ValueError('encounter nan')
         self._noise = noise.copy()
+        
+    @offset.setter
+    def offset(self, offset):
+        if offset is None:
+            self._offset = np.zeros_like(self._noise)
+        else:
+            assert (offset.shape == self._noise.shape)
+            if (np.isnan(offset).any()):
+                raise ValueError('encounter nan')
+            self._offset = offset.copy()
 
     @covariance.setter
     def covariance(self, covariance):
@@ -203,8 +218,8 @@ class tpfit(object):
 @icy
 class tpfit_gauss(tpfit):
 
-    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None):
-        super(tpfit_gauss, self).__init__(signal,fiducial,noise,covariance,background,foreground)
+    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None, offset=None):
+        super(tpfit_gauss, self).__init__(signal,fiducial,noise,covariance,background,foreground,offset)
 
     def loglikeli(self, predicted):
         """log-likelihood function"""
@@ -222,13 +237,13 @@ class tpfit_gauss(tpfit):
 @icy
 class tpfit_hl(tpfit):
 
-    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None):
-       super(tpfit_hl, self).__init__(signal,fiducial,noise,covariance,background,foreground)
+    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None, offset=None):
+       super(tpfit_hl, self).__init__(signal,fiducial,noise,covariance,background,foreground,offset)
 
     def loglikeli(self, predicted):
         """log-likelihood function"""
         assert (predicted.shape == self._signal.shape)
-        diff = vec_hl(predicted+self._noise,self._signal,self._fiducial)
+        diff = vec_hl(predicted+self._noise+self._offset,self._signal+self._offset,self._fiducial+self._offset)
         if (np.isnan(diff).any()):
             raise ValueError('encounter nan')
         #(sign, logdet) = np.linalg.slogdet(self._covariance*2.*np.pi)
