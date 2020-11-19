@@ -20,8 +20,6 @@ class tpfit(object):
         self.params = dict()
         self.paramrange = dict()
         self._activelist = set()
-        # debug flag
-        self.debug = False
         # models
         self.background = background
         self.foreground = foreground
@@ -69,10 +67,6 @@ class tpfit(object):
     @property
     def activelist(self):
         return self._activelist
-
-    @property
-    def debug(self):
-        return self._debug
 
     @signal.setter
     def signal(self, signal):
@@ -150,11 +144,6 @@ class tpfit(object):
             self._params.update(self._background.params)
             self._paramrange.update(self._background.paramrange)
 
-    @debug.setter
-    def debug(self, debug):
-        assert isinstance(debug, bool)
-        self._debug = debug
-
     def rerange(self, pdict):
         assert isinstance(pdict, dict)
         for name in pdict:
@@ -164,15 +153,6 @@ class tpfit(object):
                 self._paramrange.update({name: pdict[name]})
 
     def run(self, kwargs=dict()):
-        if self._debug:
-            print ('\n template fitting kernel check list \n')
-            print ('# of parameters')
-            print (len(self.params))
-            print ('parameters')
-            print (self.params.keys())
-            print ('parameter range')
-            print (self.paramrange)
-            print ('\n')
         self._activelist = set(self._params.keys())
         if self._background is not None:
             self._activelist -= set(self._background.blacklist)

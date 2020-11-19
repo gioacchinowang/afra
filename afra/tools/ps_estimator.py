@@ -152,7 +152,7 @@ class pstimator(object):
     @lmax.setter
     def lmax(self, lmax):
         if lmax is None:
-            self._lmax = 2*self._nside
+            self._lmax = 2*self._nside-1
         else:
             assert isinstance(lmax, int)
             assert (lmax < 3*self._nside)
@@ -323,12 +323,12 @@ class pstimator(object):
         return rslt
 
     def bands(self):
-        """NaMaster multipole band object"""
+        """customize NaMaster multipole band object"""
         ells = np.arange(3*self._nside, dtype='int32')  # Array of multipoles
         weights = np.ones_like(ells)/self._psbin  # Array of weights
         bpws = -1 + np.zeros_like(ells)  # Array of bandpower indices
         i = 0
-        while self._psbin * (i + 1) + self._lmin < self._lmax:
+        while self._psbin * (i + 1) + self._lmin - 1 <= self._lmax:
             bpws[self._psbin * i + self._lmin: self._psbin * (i+1) + self._lmin] = i
             i += 1
         return nmt.NmtBin(nside=self._nside, bpws=bpws, ells=ells, weights=weights, is_Dell=True, lmax=self._lmax)
@@ -337,12 +337,16 @@ class pstimator(object):
         """
         "top-hat" window function matrix
         for converting PS into band-powers
+
+        Parameters
+        ----------
+            input power-spectrum in multipole range (lmin:lmax+1)
         
         Return
         ----------
-            band-power converting matrix of shape (# eff-ell, # lmax)
+            band-power converting matrix in shape (# eff-ell)
         """
-        assert (len(ps) == self._lmax - self._lmin)
+        assert (len(ps) == self._lmax + 1 - self._lmin)
         bp = np.zeros(self._nmode,dtype=np.float32)
         for i in range(len(bp)):  # ps band window
             lrange = np.array(self._b.get_ell_list(i))

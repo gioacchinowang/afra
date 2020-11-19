@@ -9,12 +9,13 @@ from afra.tools.icy_decorator import icy
 
 @icy
 class abspipe(object):
-    """The ABS pipeline class."""
-
-    def __init__(self, signals, noises=None, fiducials=None, mask=None, fwhms=None, fiducial_fwhms=None, targets='T', background=None, filt=None):
-        """
-        The ABS pipeline for extracting CMB power-spectrum band power,
+    """The ABS pipeline for extracting CMB power-spectrum band power,
         according to given measured sky maps at various frequency bands.
+    """
+
+    def __init__(self, signals, noises=None, fiducials=None, mask=None, fwhms=None, fiducial_fwhms=None, targets='T', filt=None, background=None, likelihood='gauss'):
+        """
+        ABS pipeline init.
         
         Parameters
         ----------
@@ -25,29 +26,34 @@ class abspipe(object):
         
         noises : dict
             Simulated noise map samples,
-            should be arranged in type: {frequency (GHz): (sample #, map #, pixel #)}.
+            should be arranged in form: {frequency (GHz): (sample #, map #, pixel #)}.
+        
+        fiducials: dict
+            Fiducial CMB maps (prepared),
+            should be arranged in form: {frequency (GHz): (sample #, map #, pixel #)}.
         
         mask : numpy.ndarray
-            Single mask map,
+            Universal mask map, if None, assume full-sky coverage, otherwise,
             should be arranged in shape: (pixel #,).
         
         fwhms : dict
-            FWHM (in rad) of gaussian beams for each frequency.
+            FWHM (in rad) of (measurements') gaussian beams for each frequency,
+            if None, assume no observational beam.
         
-        targets : str
-            Choose among 'T', 'E', 'B', 'EB', 'TEB'.
-
-        filt : dict
-            Filtering-correction matrix for CMB (from filted to original)
-
-        fiducials: dict
-            Fiducial CMB bandpowers
-
         fiducial_fwhms: dict
             Fiducial CMB fwhms.
-
+        
+        targets : str
+            Chosen among 'T', 'E', 'B', 'EB', 'TEB',
+            to instruct analyzing mode combination.
+        
+        filt : dict
+            Filtering-correction matrix for CMB (from filted to original),
+            entry name should at least contain "targets".
+        
         background: str
-            CMB model type.
+            CMB model type, chosen among "ncmb" and "acmb",
+            can be None if post-ABS analysis is not required.
         """
         self.signals = signals
         self.noises = noises
@@ -68,8 +74,10 @@ class abspipe(object):
         self.fiducial_fwhms = fiducial_fwhms
         # background model
         self.background = background
+        self._background_obj = None
         # Bayesian engine, to be assigned
         self._engine = None
+        self.likelihood = likelihood
         # init parameter list
         self.paramlist = list()
         self.paramrange = dict()
@@ -139,6 +147,10 @@ class abspipe(object):
         return self._engine
 
     @property
+    def likelihood(self):
+        return self._likelihood
+
+    @property
     def paramlist(self):
         return self._paramlist
 
@@ -148,7 +160,7 @@ class abspipe(object):
 
     @signals.setter
     def signals(self, signals):
-        """detect and register nfreq, nmap, npix and nside automatically
+        """catch and register nfreq, nmap, npix and nside automatically.
         """
         assert isinstance(signals, dict)
         self._nfreq = len(signals)
@@ -184,8 +196,8 @@ class abspipe(object):
             self._mask = mask.copy()
         # clean up input maps with mask
         for f in self._freqlist:
-        	self._signals[f][:,self._mask==0.] = 0.
-        	if self._noises is not None:
+            self._signals[f][:,self._mask==0.] = 0.
+            if self._noises is not None:
                     self._noises[f][:,:,self._mask==0.] = 0.
 
     @debug.setter
@@ -195,7 +207,6 @@ class abspipe(object):
 
     @fwhms.setter
     def fwhms(self, fwhms):
-        """signal maps' fwhms"""
         if fwhms is not None:
             assert isinstance(fwhms, dict)
             assert (len(fwhms) == self._nfreq)
@@ -241,6 +252,11 @@ class abspipe(object):
         else:
             self._fiducial_fwhms = None
 
+    @likelihood.setter
+    def likelihood(self, likelihood):
+        assert isinstance(likelihood, str)
+        self._likelihood = likelihood
+
     @background.setter
     def background(self, background):
         if background is None:
@@ -264,17 +280,20 @@ class abspipe(object):
 
     def run(self, aposcale, psbin, lmin=None, lmax=None, shift=None, threshold=None, kwargs=dict()):
         """
-        ABS pipeline class call function.
-         
+        ABS routine,
+        1. run "preprocess", estimate band-powers from given maps.
+        2. run "analyse", extract measurement-based CMB band-powers with ABS method.
+        3. run "postprocess", fit CMB band-powers/parameters with cosmic-variance.
+        
         Returns
         -------
-        
-        angular modes, target angular power spectrum : tuple of lists
+            (Dynesty fitting result)
         """
         assert isinstance(aposcale, float)
         assert isinstance(psbin, int)
         assert (psbin > 0)
         assert (aposcale > 0)
+        assert (self._background is not None)
         # preprocess
         bp_s, bp_f, bp_n = self.preprocess(aposcale, psbin, lmin, lmax)
         # method selection
@@ -283,6 +302,13 @@ class abspipe(object):
         return self.postprocess(bp_cmb, bp_f, kwargs)
 
     def run_absonly(self, aposcale, psbin, lmin=None, lmax=None, shift=None, threshold=None):
+        """
+        ABS routine without "postprocess".
+        
+        Returns
+        -------
+            (angular modes, requested PS, eigen info)
+        """
         assert isinstance(aposcale, float)
         assert isinstance(psbin, int)
         assert (psbin > 0)
@@ -306,15 +332,9 @@ class abspipe(object):
             Number of angular modes in each bin,
             for conducting pseudo-PS estimation.
 
-        shift : float
-            ABS method shift parameter.
-
-        threshold : float or None
-            ABS method threshold parameter.
-
         Returns
         -------
-            band powers
+            (signal bp, fiducial bp, noise bp)
         """
         assert isinstance(aposcale, float)
         assert isinstance(psbin, int)
@@ -396,7 +416,7 @@ class abspipe(object):
         
         Returns
         -------
-        angular modes, requested PS, eigen info
+            (angular modes, requested PS, eigen info)
         """
         # send PS to ABS method, noiseless case requires no shift nor threshold
         rslt = np.empty((self._ntarget,self._estimator.nmode),dtype=np.float32)
@@ -432,16 +452,19 @@ class abspipe(object):
     def postprocess(self, cmb_bp, fiducial_bp, kwargs=dict()):
         # prepare model, parameter list generated during init models
         if self._background is not None:
-            self._background = self._background(list(self._fiducials.keys()),self._estimator)
+            self._background_obj = self._background(list(self._fiducials.keys()),self._estimator)
         # estimate M
         x_hat = cmb_bp.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
         x_fid = fiducial_bp.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
         n_hat = np.zeros((self._ntarget,self._estimator.nmode,1,1),dtype=np.float32)
         x_mat = oas_cov(vec_gauss(x_hat+x_fid))
-        o_hat = n_hat.copy()  # offset defined in lollipop likelihood (1503.01347)
-        for l in range(o_hat.shape[1]):
-            o_hat[:,l,:,:] *= np.sqrt(2.*self._estimator.modes[l]+1./2.)
-        self._engine = tpfit_hl(np.mean(x_hat,axis=0),np.mean(x_fid,axis=0),n_hat,x_mat,self._background,None,o_hat)
+        if (self._likelihood == 'gauss'):
+            self._engine = tpfit_gauss(np.mean(x_hat,axis=0),np.mean(x_fid,axis=0),n_hat,x_mat,self._background_obj,None)
+        elif (self._likelihood == 'hl'):
+            o_hat = n_hat.copy()  # offset defined in lollipop likelihood (1503.01347)
+            for l in range(o_hat.shape[1]):
+                o_hat[:,l,:,:] *= np.sqrt(2.*self._estimator.modes[l]+1./2.)
+            self._engine = tpfit_hl(np.mean(x_hat,axis=0),np.mean(x_fid,axis=0),n_hat,x_mat,self._background_obj,None,o_hat)
         if (len(self._paramrange)):
             self._engine.rerange(self._paramrange)
         rslt = self._engine.run(kwargs)

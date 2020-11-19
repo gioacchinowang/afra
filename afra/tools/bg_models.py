@@ -204,7 +204,7 @@ class acmbmodel(bgmodel):
         in shape (ell #, freq #, freq #)
         """
         enum = {'T':[0],'E':[1],'B':[2],'EB':[1,2],'TEB':[0,1,2]}
-        fiducial_cl = np.transpose(self._template_ps['lensed_scalar']*[1.,self._params['Ae'],self._params['Al'],1.])[enum[self._estimator._targets],self._estimator._lmin:self._estimator._lmax] + np.transpose(self._template_ps['tensor']*[1.,self._params['Ae'],self._params['r']/0.05,1.])[enum[self._estimator._targets],self._estimator._lmin:self._estimator._lmax]
+        fiducial_cl = np.transpose(self._template_ps['lensed_scalar']*[1.,self._params['Ae'],self._params['Al'],1.])[enum[self._estimator._targets],self._estimator._lmin:self._estimator._lmax+1] + np.transpose(self._template_ps['tensor']*[1.,self._params['Ae'],self._params['r']/0.05,1.])[enum[self._estimator._targets],self._estimator._lmin:self._estimator._lmax+1]
         # fiducial_cl in shape (ntarget,lmax-lmin)
         fiducial_bp = np.zeros((self._estimator._ntarget,self._estimator._nmode),dtype=np.float32)
         for t in range(self._estimator._ntarget):

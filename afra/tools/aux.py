@@ -125,21 +125,19 @@ def vec_hl(cps,cps_hat,cps_fid):
         for l in range(nmode):
             c_h = cps_hat[t,l]
             c_f = sqrtm(cps_fid[t,l])
-            c_inv = sqrtm(np.linalg.pinv(cps[t,l]))
+            c_inv = sqrtm(np.linalg.inv(cps[t,l]))
             res = np.dot(np.conjugate(c_inv), np.dot(c_h, c_inv))
             [d, u] = np.linalg.eigh(res)
-            if (any(d<0)):
-                rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] *= np.nan_to_num(np.inf)
-            else:
-                # real symmetric matrices are diagnalized by orthogonal matrices (M^t M = 1)
-                # this makes a diagonal matrix by applying g(x) to the eigenvalues, equation 10 in Barkats et al
-                gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
-                # multiplying from right to left
-                x = np.dot(gd, np.dot(np.transpose(u),c_f))
-                x = np.dot(np.conjugate(c_f), np.dot(np.conjugate(u),x))
-                #if (np.isnan(x).any()):
-                #    raise ValueError('encounter nan')
-                rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = x[triu_idx]
+            #if (any(d<0)):
+            #    rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] *= np.nan_to_num(np.inf)
+            #else:
+            # real symmetric matrices are diagnalized by orthogonal matrices (M^t M = 1)
+            # this makes a diagonal matrix by applying g(x) to the eigenvalues, equation 10 in Barkats et al
+            gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
+            # multiplying from right to left
+            x = np.dot(gd, np.dot(np.transpose(u),c_f))
+            x = np.dot(np.conjugate(c_f), np.dot(np.conjugate(u),x))
+            rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = x[triu_idx]
     return rslt
 
 
