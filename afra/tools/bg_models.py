@@ -173,7 +173,7 @@ class acmbmodel(bgmodel):
         pars = camb.CAMBparams()
         pars.set_cosmology(H0=67.5,ombh2=0.022,omch2=0.122,mnu=0.06,omk=0,tau=0.06)
         pars.InitPower.set_params(As=2e-9,ns=0.965,r=0.05)
-        pars.set_for_lmax(max(4000,self._estimator._lmax),lens_potential_accuracy=1)
+        pars.set_for_lmax(max(4000,self._estimator._lmax),lens_potential_accuracy=2)
         pars.WantTensors = True
         results = camb.get_results(pars)
         self._template_ps = results.get_cmb_power_spectra(pars,CMB_unit='muK',raw_cl=True)

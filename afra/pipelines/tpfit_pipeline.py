@@ -25,13 +25,13 @@ class tpfpipe(object):
         foreground frequency scaling parameters
         foregorund cross-corr parameters
     """
-    def __init__(self, signals, noises, fiducials, mask=None, fwhms=None, templates=None, template_noises=None, template_fwhms=None, fiducial_fwhms=None, likelihood='gauss', targets='T', foreground=None, background=None, filt=None):
+    def __init__(self, data, noises, fiducials, mask=None, fwhms=None, templates=None, template_noises=None, template_fwhms=None, fiducial_fwhms=None, likelihood='gauss', targets='T', foreground=None, background=None, filt=None):
         """
         Parameters
         ----------
         
-        signals : dict
-            Measured signal maps,
+        data : dict
+            Measured data maps,
             should be arranged in type {frequency (GHz): (map #, pixel #)}.
         
         noises : dict
@@ -82,7 +82,7 @@ class tpfpipe(object):
             entry name should contain "targets".
         """
         # measurements
-        self.signals = signals
+        self.data = data
         self.noises = noises
         self.fiducials = fiducials
         # adding template maps (for estimating template PS band power)
@@ -132,8 +132,8 @@ class tpfpipe(object):
         return self._template_nfreq
 
     @property
-    def signals(self):
-        return self._signals
+    def data(self):
+        return self._data
 
     @property
     def noises(self):
@@ -229,16 +229,16 @@ class tpfpipe(object):
         assert isinstance(paramrange, dict)
         self._paramrange = paramrange
 
-    @signals.setter
-    def signals(self, signals):
-        assert isinstance(signals, dict)
-        self._nfreq = len(signals)
-        self._freqlist = sorted(signals.keys())
-        assert (len(signals[next(iter(signals))].shape) == 2)
-        assert (signals[next(iter(signals))].shape[0] == 3)
-        self._npix = signals[next(iter(signals))].shape[1]
+    @data.setter
+    def data(self, data):
+        assert isinstance(data, dict)
+        self._nfreq = len(data)
+        self._freqlist = sorted(data.keys())
+        assert (len(data[next(iter(data))].shape) == 2)
+        assert (data[next(iter(data))].shape[0] == 3)
+        self._npix = data[next(iter(data))].shape[1]
         self._nside = int(np.sqrt(self._npix//12))
-        self._signals = signals.copy()
+        self._data = data.copy()
 
     @noises.setter
     def noises(self, noises):
@@ -327,7 +327,7 @@ class tpfpipe(object):
             self._mask = mask.copy()
         # clean up input maps with mask
         for f in self._freqlist:
-            self._signals[f][:,self._mask==0.] = 0.
+            self._data[f][:,self._mask==0.] = 0.
             if self._noises is not None:
                     self._noises[f][:,:,self._mask==0.] = 0.
 
@@ -433,27 +433,27 @@ class tpfpipe(object):
         """
         Returns
         -------
-            (signal bp, fiducial mean bp, noise mean bp, M)
+            (data bp, fiducial mean bp, noise mean bp, M)
         """
         # prepare ps estimator
         self._estimator = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmin=lmin,lmax=lmax,targets=self._targets,filt=self._filt)
         if self._template_flag:
             self._template_bp = dict()
             for i in range(self._template_nfreq):
-                signal_bp = np.zeros((self._ntarget,self._estimator.nmode),dtype=np.float32)
+                data_bp = np.zeros((self._ntarget,self._estimator.nmode),dtype=np.float32)
                 noise_bp = np.zeros((self._template_nsamp,self._ntarget,self._estimator.nmode),dtype=np.float32)
                 _fi = self._template_freqlist[i]
                 wsp = self._estimator.autoWSP(self._templates[_fi],fwhms=self._template_fwhms[_fi])
                 stmp = self._estimator.autoBP(self._templates[_fi],wsp=wsp,fwhms=self._template_fwhms[_fi])
                 for t in range(self._ntarget):
-                    signal_bp[t] = stmp[1+t]
+                    data_bp[t] = stmp[1+t]
                 for s in range(self._template_nsamp):
                     # auto correlation
                     ntmp = self._estimator.autoBP(self._template_noises[_fi][s],wsp=wsp,fwhms=self._template_fwhms[_fi])
                     # assign results
                     for t in range(self._ntarget):
                         noise_bp[s,t] = ntmp[1+t]
-                self._template_bp[_fi] = signal_bp - np.mean(noise_bp,axis=0)
+                self._template_bp[_fi] = data_bp - np.mean(noise_bp,axis=0)
         # prepare model, parameter list generated during init models
         if self._background is not None:
             self._background_obj = self._background(self._freqlist,self._estimator)
@@ -462,27 +462,27 @@ class tpfpipe(object):
         # estimate X_hat and M
         wsp_dict = dict()  # wsp pool
         fwsp_dict = dict() # fiducial wsp pool
-        signal_bp = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        data_bp = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
         noise_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
         fiducial_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
         # filling wsp pool and estimated measured bandpowers
         for i in range(self._nfreq):
             _fi = self._freqlist[i]
-            wsp_dict[(i,i)] = self._estimator.autoWSP(self._signals[_fi],fwhms=self._fwhms[_fi])
+            wsp_dict[(i,i)] = self._estimator.autoWSP(self._data[_fi],fwhms=self._fwhms[_fi])
             fwsp_dict[(i,i)] = self._estimator.autoWSP(self._fiducials[_fi][0],fwhms=self._fiducial_fwhms[_fi])
-            stmp = self._estimator.autoBP(self._signals[_fi],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
+            stmp = self._estimator.autoBP(self._data[_fi],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
             for t in range(self._ntarget):
                 for k in range(self._estimator.nmode):
-                    signal_bp[t,k,i,i] = stmp[1+t][k]
+                    data_bp[t,k,i,i] = stmp[1+t][k]
             for j in range(i+1,self._nfreq):
                 _fj = self._freqlist[j]
-                wsp_dict[(i,j)] = self._estimator.crosWSP(np.r_[self._signals[_fi],self._signals[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                wsp_dict[(i,j)] = self._estimator.crosWSP(np.r_[self._data[_fi],self._data[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
                 fwsp_dict[(i,j)] = self._estimator.crosWSP(np.r_[self._fiducials[_fi][0],self._fiducials[_fj][0]],fwhms=[self._fiducial_fwhms[_fi],self._fiducial_fwhms[_fj]])
-                stmp = self._estimator.crosBP(np.r_[self._signals[_fi],self._signals[_fj]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                stmp = self._estimator.crosBP(np.r_[self._data[_fi],self._data[_fj]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
                 for t in range(self._ntarget):
                     for k in range(self._estimator.nmode):
-                        signal_bp[t,k,i,j] = stmp[1+t][k]
-                        signal_bp[t,k,j,i] = stmp[1+t][k]
+                        data_bp[t,k,i,j] = stmp[1+t][k]
+                        data_bp[t,k,j,i] = stmp[1+t][k]
         # work out estimations
         for s in range(self._nsamp):
             # prepare noise samples on-fly
@@ -509,8 +509,8 @@ class tpfpipe(object):
                             fiducial_bp[s,t,k,i,j] = stmp[1+t][k]+ntmp[1+t][k]
                             fiducial_bp[s,t,k,j,i] = stmp[1+t][k]+ntmp[1+t][k]
         if self._debug:
-            return ( signal_bp, fiducial_bp, noise_bp )
-        return ( signal_bp, np.mean(fiducial_bp,axis=0), np.mean(noise_bp,axis=0), oas_cov(vec_gauss(fiducial_bp)) )
+            return ( data_bp, fiducial_bp, noise_bp )
+        return ( data_bp, np.mean(fiducial_bp,axis=0), np.mean(noise_bp,axis=0), oas_cov(vec_gauss(fiducial_bp)) )
 
     def analyse(self,x_hat,x_fid,n_hat,x_mat,kwargs=dict()):
         return self._anadict[self._likelihood](x_hat,x_fid,n_hat,x_mat,kwargs)
@@ -535,27 +535,27 @@ class tpfpipe(object):
         self._paramlist = sorted(self._engine.activelist)
         return result
 
-    def reprocess(self,signals):
+    def reprocess(self,data):
         """
-        use new signal dict and pre-calculated noise level
+        use new data dict and pre-calculated noise level
         to produce new dl_hat
         """
-        # read new signals dict
-        assert isinstance(signals, dict)
-        assert (self._freqlist == list(signals.keys()))
-        assert (signals[next(iter(signals))].shape == (3,self._npix))
-        signal_bp = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        # read new data dict
+        assert isinstance(data, dict)
+        assert (self._freqlist == list(data.keys()))
+        assert (data[next(iter(data))].shape == (3,self._npix))
+        data_bp = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
         for i in range(self._nfreq):
             _fi = self._freqlist[i]
-            stmp = self._estimator.autoBP(signals[_fi],fwhms=self._fwhms[_fi])
+            stmp = self._estimator.autoBP(data[_fi],fwhms=self._fwhms[_fi])
             for t in range(self._ntarget):
                 for k in range(self._estimator.nmode):
-                    signal_bp[t,k,i,i] = stmp[1+t][k]
+                    data_bp[t,k,i,i] = stmp[1+t][k]
             for j in range(i+1,self._nfreq):
                 _fj = self._freqlist[j]
-                stmp = self._estimator.crosBP(np.r_[signals[_fi],signals[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                stmp = self._estimator.crosBP(np.r_[data[_fi],data[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
                 for t in range(self._ntarget):
                     for k in range(self._estimator.nmode):
-                        signal_bp[t,k,i,j] = stmp[1+t][k]
-                        signal_bp[t,k,j,i] = stmp[1+t][k]
-        return signal_bp
+                        data_bp[t,k,i,j] = stmp[1+t][k]
+                        data_bp[t,k,j,i] = stmp[1+t][k]
+        return data_bp

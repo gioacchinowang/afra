@@ -8,14 +8,14 @@ class abssep(object):
     The ABS separator class.
 
     """
-    def __init__(self, signal, noise=None, sigma=None, shift=None, threshold=None):
+    def __init__(self, data, noise=None, sigma=None, shift=None, threshold=None):
         """
         ABS separator class initialization function.
         
         Parameters:
         -----------
         
-        singal : numpy.ndarray
+        data : numpy.ndarray
             The total CROSS power-sepctrum matrix,
             with global size (N_modes, N_freq, N_freq).
             * N_freq: number of frequency bands
@@ -41,7 +41,7 @@ class abssep(object):
             If None, no threshold is taken.
             The threshold of signal to noise ratio, for information extraction.
         """
-        self.signal = signal
+        self.data = data
         self.noise = noise
         self.sigma = sigma
         self.shift = shift
@@ -49,8 +49,8 @@ class abssep(object):
         self.noise_flag = not (self._noise is None or self._sigma is None)
 
     @property
-    def signal(self):
-        return self._signal
+    def data(self):
+        return self._data
 
     @property
     def noise(self):
@@ -72,15 +72,15 @@ class abssep(object):
     def noise_flag(self):
         return self._noise_flag
         
-    @signal.setter
-    def signal(self, signal):
-        assert isinstance(signal, np.ndarray)
-        self._lsize = signal.shape[0]  # number of angular modes
-        self._fsize = signal.shape[1]  # number of frequency bands
-        assert (signal.shape[1] == signal.shape[2])
-        if (np.isnan(signal).any()):
+    @data.setter
+    def data(self, data):
+        assert isinstance(data, np.ndarray)
+        self._lsize = data.shape[0]  # number of angular modes
+        self._fsize = data.shape[1]  # number of frequency bands
+        assert (data.shape[1] == data.shape[2])
+        if (np.isnan(data).any()):
             raise ValueError('encounter nan')
-        self._signal = signal.copy()
+        self._data = data.copy()
 
     @noise.setter
     def noise(self, noise):
@@ -129,7 +129,7 @@ class abssep(object):
 
     def run(self):
         # binned average, converted to band power
-        DL = self._signal.copy()
+        DL = self._data.copy()
         RL = np.ones((self._lsize,self._fsize),dtype=np.float64)
         RL_tensor = np.ones((self._lsize,self._fsize,self._fsize),dtype=np.float64)
         if self._noise_flag:
@@ -162,7 +162,7 @@ class abssep(object):
 
     def run_info(self):
         # binned average, converted to band power
-        DL = self._signal.copy()
+        DL = self._data.copy()
         RL = np.ones((self._lsize,self._fsize),dtype=np.float64)
         RL_tensor = np.ones((self._lsize,self._fsize,self._fsize),dtype=np.float64)
         if self._noise_flag:

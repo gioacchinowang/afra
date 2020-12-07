@@ -222,6 +222,7 @@ class pstimator(object):
     def purified_b(self, maps):
         """Get pure E mode scalar map with E2B leakage corrected.
         Has to be conducted before apodizing the mask.
+        (https://arxiv.org/abs/1811.04691)
         
         Parameters
         ----------

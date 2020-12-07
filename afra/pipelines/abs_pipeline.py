@@ -13,15 +13,15 @@ class abspipe(object):
         according to given measured sky maps at various frequency bands.
     """
 
-    def __init__(self, signals, noises=None, fiducials=None, mask=None, fwhms=None, fiducial_fwhms=None, targets='T', filt=None, background=None, likelihood='gauss'):
+    def __init__(self, data, noises=None, fiducials=None, mask=None, fwhms=None, fiducial_fwhms=None, targets='T', filt=None, background=None, likelihood='gauss'):
         """
         ABS pipeline init.
         
         Parameters
         ----------
         
-        signals : dict
-            Measured signal maps,
+        data : dict
+            Measured data maps,
             should be arranged in form: {frequency (GHz) : array(map #, pixel #)}.
         
         noises : dict
@@ -55,7 +55,7 @@ class abspipe(object):
             CMB model type, chosen among "ncmb" and "acmb",
             can be None if post-ABS analysis is not required.
         """
-        self.signals = signals
+        self.data = data
         self.noises = noises
         self.mask = mask
         self.fwhms = fwhms
@@ -83,8 +83,8 @@ class abspipe(object):
         self.paramrange = dict()
 
     @property
-    def signals(self):
-        return self._signals
+    def data(self):
+        return self._data
 
     @property
     def noises(self):
@@ -158,18 +158,18 @@ class abspipe(object):
     def paramrange(self):
         return self._paramrange
 
-    @signals.setter
-    def signals(self, signals):
+    @data.setter
+    def data(self, data):
         """catch and register nfreq, nmap, npix and nside automatically.
         """
-        assert isinstance(signals, dict)
-        self._nfreq = len(signals)
-        self._freqlist = sorted(signals.keys())
-        assert (len(signals[next(iter(signals))].shape) == 2)
-        assert (signals[next(iter(signals))].shape[0] == 3)
-        self._npix = signals[next(iter(signals))].shape[1]
+        assert isinstance(data, dict)
+        self._nfreq = len(data)
+        self._freqlist = sorted(data.keys())
+        assert (len(data[next(iter(data))].shape) == 2)
+        assert (data[next(iter(data))].shape[0] == 3)
+        self._npix = data[next(iter(data))].shape[1]
         self._nside = int(np.sqrt(self._npix//12))
-        self._signals = signals.copy()
+        self._data = data.copy()
 
     @noises.setter
     def noises(self, noises):
@@ -196,7 +196,7 @@ class abspipe(object):
             self._mask = mask.copy()
         # clean up input maps with mask
         for f in self._freqlist:
-            self._signals[f][:,self._mask==0.] = 0.
+            self._data[f][:,self._mask==0.] = 0.
             if self._noises is not None:
                     self._noises[f][:,:,self._mask==0.] = 0.
 
@@ -334,7 +334,7 @@ class abspipe(object):
 
         Returns
         -------
-            (signal bp, fiducial bp, noise bp)
+            (data bp, fiducial bp, noise bp)
         """
         assert isinstance(aposcale, float)
         assert isinstance(psbin, int)
@@ -344,37 +344,37 @@ class abspipe(object):
         self._estimator = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmin=lmin,lmax=lmax,targets=self._targets,filt=self._filt)
         # run trial PS estimations for workspace template
         if not self._noise_flag:
-            # prepare total signals PS in the shape required by ABS method
-            signal_bp = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
+            # prepare total data PS in the shape required by ABS method
+            data_bp = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
             for i in range(self._nfreq):
                 _fi = self._freqlist[i]
                 # auto correlation
-                stmp = self._estimator.autoBP(self._signals[_fi],fwhms=self._fwhms[_fi])
+                stmp = self._estimator.autoBP(self._data[_fi],fwhms=self._fwhms[_fi])
                 # assign results
                 for t in range(self._ntarget):
                     for k in range(self._estimator.nmode):
-                        signal_bp[t,k,i,i] = stmp[1+t][k]
+                        data_bp[t,k,i,i] = stmp[1+t][k]
                 # cross correlation
                 for j in range(i+1,self._nfreq):
                     _fj = self._freqlist[j]
-                    stmp = self._estimator.crosBP(np.r_[self._signals[_fi],self._signals[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                    stmp = self._estimator.crosBP(np.r_[self._data[_fi],self._data[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
                     for t in range(self._ntarget):
                         for k in range(self._estimator.nmode):
-                            signal_bp[t,k,i,j] = stmp[1+t][k]
-                            signal_bp[t,k,j,i] = stmp[1+t][k]
-            return (signal_bp, None, None)
+                            data_bp[t,k,i,j] = stmp[1+t][k]
+                            data_bp[t,k,j,i] = stmp[1+t][k]
+            return (data_bp, None, None)
         else:
             # run trial PS estimations for workspace template
             wsp_dict = dict()
             for i in range(self._nfreq):
                 _fi = self._freqlist[i]
-                wsp_dict[(i,i)] = self._estimator.autoWSP(self._signals[_fi],fwhms=self._fwhms[_fi])
+                wsp_dict[(i,i)] = self._estimator.autoWSP(self._data[_fi],fwhms=self._fwhms[_fi])
                 for j in range(i+1,self._nfreq):
                     _fj = self._freqlist[j]
-                    wsp_dict[(i,j)] = self._estimator.crosWSP(np.r_[self._signals[_fi],self._signals[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                    wsp_dict[(i,j)] = self._estimator.crosWSP(np.r_[self._data[_fi],self._data[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
             # allocate
             noise_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
-            signal_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
+            data_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
             fiducial_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode),dtype=np.float32)
             for s in range(self._nsamp):
                 # fiducial
@@ -387,30 +387,30 @@ class abspipe(object):
                     _fi = self._freqlist[i]
                     # auto correlation
                     ntmp = self._estimator.autoBP(self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
-                    stmp = self._estimator.autoBP(self._signals[_fi]+self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
+                    stmp = self._estimator.autoBP(self._data[_fi]+self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
                     # assign results
                     for t in range(self._ntarget):
                         for k in range(self._estimator.nmode):
                             noise_bp[s,t,k,i,i] = ntmp[1+t][k]
-                            signal_bp[s,t,k,i,i] = stmp[1+t][k]
+                            data_bp[s,t,k,i,i] = stmp[1+t][k]
                     # cross correlation
                     for j in range(i+1,self._nfreq):
                         _fj = self._freqlist[j]
                         # cross correlation
                         ntmp = self._estimator.crosBP(np.r_[self._noises[_fi][s],self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
-                        stmp = self._estimator.crosBP(np.r_[self._signals[_fi]+self._noises[_fi][s],self._signals[_fj]+self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                        stmp = self._estimator.crosBP(np.r_[self._data[_fi]+self._noises[_fi][s],self._data[_fj]+self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
                         for t in range(self._ntarget):
                             for k in range(self._estimator.nmode):
                                 noise_bp[s,t,k,i,j] = ntmp[1+t][k]
                                 noise_bp[s,t,k,j,i] = ntmp[1+t][k]
-                                signal_bp[s,t,k,i,j] = stmp[1+t][k]
-                                signal_bp[s,t,k,j,i] = stmp[1+t][k]
-            return (signal_bp, fiducial_bp, noise_bp)
+                                data_bp[s,t,k,i,j] = stmp[1+t][k]
+                                data_bp[s,t,k,j,i] = stmp[1+t][k]
+            return (data_bp, fiducial_bp, noise_bp)
 
-    def analyse(self, bp_signal, bp_noise, shift, threshold):
-        return self._anadict[self._noise_flag](bp_signal, bp_noise, shift, threshold)
+    def analyse(self, bp_data, bp_noise, shift, threshold):
+        return self._anadict[self._noise_flag](bp_data, bp_noise, shift, threshold)
 
-    def analyse_quiet(self, signal, noise=None, shift=None, threshold=None):
+    def analyse_quiet(self, data, noise=None, shift=None, threshold=None):
         """
         CMB (band power) extraction without noise.
         
@@ -422,13 +422,13 @@ class abspipe(object):
         rslt = np.empty((self._ntarget,self._estimator.nmode),dtype=np.float32)
         info = dict()
         for t in range(self._ntarget):
-            spt = abssep(signal[t],shift=None,threshold=None)
+            spt = abssep(data[t],shift=None,threshold=None)
             rslt[t] = spt.run()
             if self._debug:
                 info[self._targets[t]] = spt.run_info()
         return (self._estimator.modes, rslt, info)
 
-    def analyse_noisy(self, signal, noise, shift, threshold):
+    def analyse_noisy(self, data, noise, shift, threshold):
         # get noise PS mean and rms
         noise_mean = np.mean(noise,axis=0)
         noise_std = np.std(noise,axis=0)
@@ -443,7 +443,7 @@ class abspipe(object):
         for s in range(self._nsamp):
             for t in range(self._ntarget):
                 # send PS to ABS method
-                spt = abssep(signal[s,t]-noise_mean[t],noise_mean[t],noise_std_diag[t],shift=safe_shift[t],threshold=threshold)
+                spt = abssep(data[s,t]-noise_mean[t],noise_mean[t],noise_std_diag[t],shift=safe_shift[t],threshold=threshold)
                 rslt[s,t] = spt.run()
                 if self._debug:
                     info[self._targets[t]] = spt.run_info()
