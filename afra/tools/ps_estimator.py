@@ -117,6 +117,7 @@ class pstimator(object):
         """apply apodization during initialization"""
         if mask is None:
             self._mask = np.ones(self._npix,dtype=np.float32)
+            self._apomask = np.ones(self._npix,dtype=np.float32)
         else:
             assert isinstance(mask, np.ndarray)
             assert (len(mask) == self._npix)
