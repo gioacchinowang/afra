@@ -303,7 +303,7 @@ class abspipe(object):
 
     def run_absonly(self, aposcale, psbin, lmin=None, lmax=None, shift=None, threshold=None):
         """
-        ABS routine without "postprocess".
+        ABS analysis only, without parameteric CMB model fitting.
         
         Returns
         -------
@@ -320,7 +320,7 @@ class abspipe(object):
 
     def preprocess(self, aposcale, psbin, lmin=None, lmax=None):
         """
-        ABS preprocess function
+        ABS preprocess routine, converts maps into band-powers.
 
         Parameters
         ----------
@@ -331,6 +331,9 @@ class abspipe(object):
         psbin : integer
             Number of angular modes in each bin,
             for conducting pseudo-PS estimation.
+
+        lmin/lmax : integer
+            Lower/Upper multipole limit.
 
         Returns
         -------
@@ -412,7 +415,7 @@ class abspipe(object):
 
     def analyse_quiet(self, data, noise=None, shift=None, threshold=None):
         """
-        CMB (band power) extraction without noise.
+        Noise-free CMB (band power) extraction.
         
         Returns
         -------
