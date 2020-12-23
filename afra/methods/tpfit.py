@@ -3,7 +3,7 @@ from afra.tools.icy_decorator import icy
 from afra.tools.aux import unity_mapper, vec_gauss, vec_hl
 from afra.tools.fg_models import fgmodel
 from afra.tools.bg_models import bgmodel
-import dynesty
+from dynesty import DynamicNestedSampler
 
 
 @icy
@@ -158,7 +158,7 @@ class tpfit(object):
             self._activelist -= set(self._background.blacklist)
         if self._foreground is not None:
             self._activelist -= set(self._foreground.blacklist)
-        sampler = dynesty.NestedSampler(self._core_likelihood,self.prior,len(self._activelist),**kwargs)
+        sampler = DynamicNestedSampler(self._core_likelihood,self.prior,len(self._activelist),**kwargs)
         sampler.run_nested()
         results = sampler.results
         names = sorted(self._activelist)
@@ -208,7 +208,7 @@ class tpfit_gauss(tpfit):
         if (np.isnan(diff).any()):
             raise ValueError('encounter nan')
         #(sign, logdet) = np.linalg.slogdet(self._covariance*2.*np.pi)
-        logl = -0.5*( np.vdot(diff, np.linalg.solve(self._covariance, diff.T)) )#+sign*logdet)
+        logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))#+sign*logdet)
         if np.isnan(logl):
             return np.nan_to_num(-np.inf)
         return logl
@@ -227,7 +227,7 @@ class tpfit_hl(tpfit):
         if (np.isnan(diff).any()):
             raise ValueError('encounter nan')
         #(sign, logdet) = np.linalg.slogdet(self._covariance*2.*np.pi)
-        logl = -0.5*( np.vdot(diff, np.linalg.solve(self._covariance, diff.T)) )#+sign*logdet)
+        logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))#+sign*logdet)
         if np.isnan(logl):
             return np.nan_to_num(-np.inf)
         return logl

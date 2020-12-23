@@ -46,6 +46,18 @@ def oas_cov(sample):
     return (1. - rho) * s + np.eye(p) * rho * trs / p
 
 
+def emp_cov(sample):
+    assert isinstance(sample, np.ndarray)
+    n, p = sample.shape
+    assert (n > 0 and p > 0)
+    if n == 1:
+        return np.zeros((p, p))
+    m = np.mean(sample, axis=0)
+    u = sample - m
+    s = np.dot(u.T, u) / n
+    return s
+
+
 def unity_mapper(x, r=[0.,1.]):
     """
     Maps x from [0, 1] into the interval [a, b]
@@ -128,6 +140,7 @@ def vec_hl(cps,cps_hat,cps_fid):
             c_inv = sqrtm(np.linalg.inv(cps[t,l]))
             res = np.dot(np.conjugate(c_inv), np.dot(c_h, c_inv))
             [d, u] = np.linalg.eigh(res)
+            assert (any(d>=0))
             #if (any(d<0)):
             #    rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] *= np.nan_to_num(np.inf)
             #else:

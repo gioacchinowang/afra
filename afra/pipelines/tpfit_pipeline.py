@@ -525,9 +525,9 @@ class tpfpipe(object):
         return result
 
     def analyse_hl(self,x_hat,x_fid,n_hat,x_mat,kwargs=dict()):
-        o_hat = n_hat.copy()  # offset defined in lollipop likelihood (1503.01347)
+        o_hat = n_hat.copy()  # effecive offset (1503.01347, 2010.01139)
         for l in range(o_hat.shape[1]):
-            o_hat[:,l,:,:] *= np.sqrt(2.*self._estimator.modes[l]+1./2.)
+            o_hat[:,l,:,:] *= np.sqrt(self._estimator.modes[l]+0.5)
         self._engine = tpfit_hl(x_hat,x_fid,n_hat,x_mat,self._background_obj,self._foreground_obj,o_hat)
         if (len(self._paramrange)):
             self._engine.rerange(self._paramrange)

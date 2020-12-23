@@ -390,24 +390,24 @@ class abspipe(object):
                     _fi = self._freqlist[i]
                     # auto correlation
                     ntmp = self._estimator.autoBP(self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
-                    stmp = self._estimator.autoBP(self._data[_fi]+self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
+                    stmp = self._estimator.autoBP(self._data[_fi],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
                     # assign results
                     for t in range(self._ntarget):
                         for k in range(self._estimator.nmode):
                             noise_bp[s,t,k,i,i] = ntmp[1+t][k]
-                            data_bp[s,t,k,i,i] = stmp[1+t][k]
+                            data_bp[s,t,k,i,i] = stmp[1+t][k]+ntmp[1+t][k]
                     # cross correlation
                     for j in range(i+1,self._nfreq):
                         _fj = self._freqlist[j]
                         # cross correlation
                         ntmp = self._estimator.crosBP(np.r_[self._noises[_fi][s],self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
-                        stmp = self._estimator.crosBP(np.r_[self._data[_fi]+self._noises[_fi][s],self._data[_fj]+self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
+                        stmp = self._estimator.crosBP(np.r_[self._data[_fi],self._data[_fj]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
                         for t in range(self._ntarget):
                             for k in range(self._estimator.nmode):
                                 noise_bp[s,t,k,i,j] = ntmp[1+t][k]
                                 noise_bp[s,t,k,j,i] = ntmp[1+t][k]
-                                data_bp[s,t,k,i,j] = stmp[1+t][k]
-                                data_bp[s,t,k,j,i] = stmp[1+t][k]
+                                data_bp[s,t,k,i,j] = stmp[1+t][k]+ntmp[1+t][k]
+                                data_bp[s,t,k,j,i] = stmp[1+t][k]+ntmp[1+t][k]
             return (data_bp, fiducial_bp, noise_bp)
 
     def analyse(self, bp_data, bp_noise, shift, threshold):
@@ -457,17 +457,15 @@ class abspipe(object):
         if self._background is not None:
             self._background_obj = self._background(list(self._fiducials.keys()),self._estimator)
         # estimate M
+        assert (cmb_bp.shape == (self._nsamp,self._ntarget,self._estimator.nmode))
         x_hat = cmb_bp.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
         x_fid = fiducial_bp.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
         n_hat = np.zeros((self._ntarget,self._estimator.nmode,1,1),dtype=np.float32)
-        x_mat = oas_cov(vec_gauss(x_hat+x_fid))
+        x_mat = oas_cov(vec_gauss(0.5*(x_hat+x_fid)))
         if (self._likelihood == 'gauss'):
-            self._engine = tpfit_gauss(np.mean(x_hat,axis=0),np.mean(x_fid,axis=0),n_hat,x_mat,self._background_obj,None)
+            self._engine = tpfit_gauss(np.mean(x_hat,axis=0),np.mean(x_fid,axis=0),n_hat,x_mat,self._background_obj)
         elif (self._likelihood == 'hl'):
-            o_hat = n_hat.copy()  # offset defined in lollipop likelihood (1503.01347)
-            for l in range(o_hat.shape[1]):
-                o_hat[:,l,:,:] *= np.sqrt(2.*self._estimator.modes[l]+1./2.)
-            self._engine = tpfit_hl(np.mean(x_hat,axis=0),np.mean(x_fid,axis=0),n_hat,x_mat,self._background_obj,None,o_hat)
+            self._engine = tpfit_hl(np.mean(x_hat,axis=0),np.mean(x_fid,axis=0),n_hat,x_mat,self._background_obj)
         if (len(self._paramrange)):
             self._engine.rerange(self._paramrange)
         rslt = self._engine.run(kwargs)
