@@ -1,10 +1,6 @@
-"""
-The pseudo-PS estimation module,
-by default it requires the NaMaster package.
-"""
-import pymaster as nmt
-import healpy as hp
 import numpy as np
+import healpy as hp
+import pymaster as nmt
 from afra.tools.icy_decorator import icy
 
 
@@ -15,7 +11,6 @@ class pstimator(object):
         """
         Parameters
         ----------
-        
         nside : integer
             HEALPix Nside.
         
@@ -114,10 +109,9 @@ class pstimator(object):
 
     @mask.setter
     def mask(self, mask):
-        """apply apodization during initialization"""
         if mask is None:
-            self._mask = np.ones(self._npix,dtype=np.float32)
-            self._apomask = np.ones(self._npix,dtype=np.float32)
+            self._mask = np.ones(self._npix,dtype=np.float64)
+            self._apomask = np.ones(self._npix,dtype=np.float64)
         else:
             assert isinstance(mask, np.ndarray)
             assert (len(mask) == self._npix)
@@ -198,7 +192,7 @@ class pstimator(object):
         assert (maps.shape == (3,self._npix))
         mask_sum = np.sum(self._mask)
         fill = np.arange(self._npix)[np.where(self._mask>0.)] # the pixel index of the available index
-        rslt = np.zeros(self._npix,dtype=np.float32)
+        rslt = np.zeros(self._npix,dtype=np.float64)
         # get the template of E to B leakage
         Alm0 = hp.map2alm(maps) #alms of the masked maps
         E0 = hp.alm2map(Alm0[1],nside=self._nside,verbose=0)  # corrupted E map
@@ -241,7 +235,7 @@ class pstimator(object):
         assert (maps.shape == (3,self._npix))
         mask_sum = np.sum(self._mask)
         fill = np.arange(self._npix)[np.where(self._mask>0.)] # the pixel index of the available index
-        rslt = np.zeros(self._npix,dtype=np.float32)
+        rslt = np.zeros(self._npix,dtype=np.float64)
         # get the template of E to B leakage
         Alm0 = hp.map2alm(maps) #alms of the masked maps
         B0 = hp.alm2map(Alm0[2],nside=self._nside,verbose=0)  # corrupted B map
@@ -283,7 +277,7 @@ class pstimator(object):
         assert (maps.shape == (3,self._npix))
         mask_sum = np.sum(self._mask)
         fill = np.arange(self._npix)[np.where(self._mask>0.)] # the pixel index of the available index
-        rslt = np.zeros((2,self._npix),dtype=np.float32)
+        rslt = np.zeros((2,self._npix),dtype=np.float64)
         # get the template of E to B leakage
         Alm0 = hp.map2alm(maps) #alms of the masked maps
         E0 = hp.alm2map(Alm0[1],nside=self._nside,verbose=0)  # corrupted E map
@@ -349,7 +343,7 @@ class pstimator(object):
             band-power converting matrix in shape (# eff-ell)
         """
         assert (len(ps) == self._lmax + 1 - self._lmin)
-        bp = np.zeros(self._nmode,dtype=np.float32)
+        bp = np.zeros(self._nmode,dtype=np.float64)
         for i in range(len(bp)):  # ps band window
             lrange = np.array(self._b.get_ell_list(i))
             w = np.array(self._b.get_weight_list(i))
@@ -377,41 +371,41 @@ class pstimator(object):
         assert (transmat.shape[0] == (bp.shape[0]*bp.shape[1]))
         return (transmat.dot(bp.reshape(-1,1))).reshape(self._ntarget,-1)
 
-    def autoWSP(self, maps, fwhms=None):
+    def autoWSP(self, maps, beams=None):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (3,self._npix))
         dat = maps[0]
         # assemble NaMaster fields
-        if fwhms is None:
+        if beams is None:
             f0 = nmt.NmtField(self._apomask, [dat])
         else:
-            f0 = nmt.NmtField(self._apomask, [dat], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+            f0 = nmt.NmtField(self._apomask, [dat], beam=hp.gauss_beam(beams, 3*self._nside-1))
         # prepare workspace
         w = nmt.NmtWorkspace()
         w.compute_coupling_matrix(f0, f0, self._b)
         return w
 
-    def crosWSP(self, maps, fwhms=[None,None]):
+    def crosWSP(self, maps, beams=[None,None]):
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (6,self._npix))
-        assert (len(fwhms) == 2)
+        assert (len(beams) == 2)
         dat1 = maps[0]
         dat2 = maps[3]
         # assemble NaMaster fields
-        if fwhms[0] is None:
+        if beams[0] is None:
             f01 = nmt.NmtField(self._apomask, [dat1])
         else:
-            f01 = nmt.NmtField(self._apomask, [dat1], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
-        if fwhms[1] is None:
+            f01 = nmt.NmtField(self._apomask, [dat1], beam=hp.gauss_beam(beams[0], 3*self._nside-1))
+        if beams[1] is None:
             f02 = nmt.NmtField(self._apomask, [dat2])
         else:
-            f02 = nmt.NmtField(self._apomask, [dat2], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+            f02 = nmt.NmtField(self._apomask, [dat2], beam=hp.gauss_beam(beams[1], 3*self._nside-1))
         # prepare workspace
         w = nmt.NmtWorkspace()
         w.compute_coupling_matrix(f01, f02, self._b)
         return w
 
-    def autoBP(self, maps, wsp=None, fwhms=None):
+    def autoBP(self, maps, wsp=None, beams=None):
         """
         Auto BP
         
@@ -424,7 +418,7 @@ class pstimator(object):
         wsp : (PS-estimator-defined) workspace
             A template of mask-induced mode coupling matrix.
         
-        fwhms : float
+        beams : float
             FWHM of gaussian beams
 
         Returns
@@ -438,9 +432,9 @@ class pstimator(object):
         _cleaned = maps.copy()
         _cleaned[:,self._mask==0.] = 0.  # !!!
         # select among T, E and B
-        return self._autodict[self._targets](_cleaned,wsp,fwhms)
+        return self._autodict[self._targets](_cleaned,wsp,beams)
 
-    def crosBP(self, maps, wsp=None, fwhms=[None,None]):
+    def crosBP(self, maps, wsp=None, beams=[None,None]):
         """
         Cross BP
         
@@ -453,7 +447,7 @@ class pstimator(object):
         wsp : (PS-estimator-defined) workspace
             A template of mask-induced mode coupling matrix.
         
-        fwhms : float
+        beams : float
             FWHM of gaussian beams.
         
         Returns
@@ -464,19 +458,19 @@ class pstimator(object):
         """
         assert isinstance(maps, np.ndarray)
         assert (maps.shape == (6,self._npix))
-        assert (len(fwhms) == 2)
+        assert (len(beams) == 2)
         _cleaned = maps.copy()
         _cleaned[:,self._mask==0.] = 0.  # !!!
         # select among T, E and B
-        return self._crosdict[self._targets](_cleaned,wsp,fwhms)
+        return self._crosdict[self._targets](_cleaned,wsp,beams)
 
-    def autoBP_T(self, maps, wsp=None, fwhms=None):
+    def autoBP_T(self, maps, wsp=None, beams=None):
         dat = maps[0]
         # assemble NaMaster fields
-        if fwhms is None:
+        if beams is None:
             f0 = nmt.NmtField(self._apomask, [dat])
         else:
-            f0 = nmt.NmtField(self._apomask, [dat], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+            f0 = nmt.NmtField(self._apomask, [dat], beam=hp.gauss_beam(beams, 3*self._nside-1))
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f0, f0, self._b)
@@ -486,18 +480,18 @@ class pstimator(object):
             cl00 = wsp.decouple_cell(cl00c)
             return (self._modes, cl00[0])
 
-    def crosBP_T(self, maps, wsp=None, fwhms=[None,None]):
+    def crosBP_T(self, maps, wsp=None, beams=[None,None]):
         dat1 = maps[0]
         dat2 = maps[3]
         # assemble NaMaster fields
-        if fwhms[0] is None:
+        if beams[0] is None:
             f01 = nmt.NmtField(self._apomask, [dat1])
         else:
-            f01 = nmt.NmtField(self._apomask, [dat1], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
-        if fwhms[1] is None:
+            f01 = nmt.NmtField(self._apomask, [dat1], beam=hp.gauss_beam(beams[0], 3*self._nside-1))
+        if beams[1] is None:
             f02 = nmt.NmtField(self._apomask, [dat2])
         else:
-            f02 = nmt.NmtField(self._apomask, [dat2], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+            f02 = nmt.NmtField(self._apomask, [dat2], beam=hp.gauss_beam(beams[1], 3*self._nside-1))
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f01, f02, self._b)
@@ -507,13 +501,13 @@ class pstimator(object):
             cl00 = wsp.decouple_cell(cl00c)
             return (self._modes, cl00[0])
 
-    def autoBP_E(self, maps, wsp=None, fwhms=None):
+    def autoBP_E(self, maps, wsp=None, beams=None):
         dat = self.purified_e(maps)
         # assemble NaMaster fields
-        if fwhms is None:
+        if beams is None:
             f0 = nmt.NmtField(self._apomask, [dat])
         else:
-            f0 = nmt.NmtField(self._apomask, [dat], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+            f0 = nmt.NmtField(self._apomask, [dat], beam=hp.gauss_beam(beams, 3*self._nside-1))
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f0, f0, self._b)
@@ -523,18 +517,18 @@ class pstimator(object):
             cl00 = wsp.decouple_cell(cl00c)
             return (self._modes, cl00[0])
 
-    def crosBP_E(self, maps, wsp=None, fwhms=[None,None]):
+    def crosBP_E(self, maps, wsp=None, beams=[None,None]):
         dat1 = self.purified_e(maps[:3])
         dat2 = self.purified_e(maps[3:])
         # assemble NaMaster fields
-        if fwhms[0] is None:
+        if beams[0] is None:
             f01 = nmt.NmtField(self._apomask, [dat1])
         else:
-            f01 = nmt.NmtField(self._apomask, [dat1], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
-        if fwhms[1] is None:
+            f01 = nmt.NmtField(self._apomask, [dat1], beam=hp.gauss_beam(beams[0], 3*self._nside-1))
+        if beams[1] is None:
             f02 = nmt.NmtField(self._apomask, [dat2])
         else:
-            f02 = nmt.NmtField(self._apomask, [dat2], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+            f02 = nmt.NmtField(self._apomask, [dat2], beam=hp.gauss_beam(beams[1], 3*self._nside-1))
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f01, f02, self._b)
@@ -544,13 +538,13 @@ class pstimator(object):
             cl00 = wsp.decouple_cell(cl00c)
             return (self._modes, cl00[0])
 
-    def autoBP_B(self, maps, wsp=None, fwhms=None):
+    def autoBP_B(self, maps, wsp=None, beams=None):
         dat = self.purified_b(maps)
         # assemble NaMaster fields
-        if fwhms is None:
+        if beams is None:
             f0 = nmt.NmtField(self._apomask, [dat])
         else:
-            f0 = nmt.NmtField(self._apomask, [dat], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+            f0 = nmt.NmtField(self._apomask, [dat], beam=hp.gauss_beam(beams, 3*self._nside-1))
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f0, f0, self._b)
@@ -560,18 +554,18 @@ class pstimator(object):
             cl00 = wsp.decouple_cell(cl00c)
             return (self._modes, cl00[0])
 
-    def crosBP_B(self, maps, wsp=None, fwhms=[None,None]):
+    def crosBP_B(self, maps, wsp=None, beams=[None,None]):
         dat1 = self.purified_b(maps[:3])
         dat2 = self.purified_b(maps[3:])
         # assemble NaMaster fields
-        if fwhms[0] is None:
+        if beams[0] is None:
             f01 = nmt.NmtField(self._apomask, [dat1])
         else:
-            f01 = nmt.NmtField(self._apomask, [dat1], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
-        if fwhms[1] is None:
+            f01 = nmt.NmtField(self._apomask, [dat1], beam=hp.gauss_beam(beams[0], 3*self._nside-1))
+        if beams[1] is None:
             f02 = nmt.NmtField(self._apomask, [dat2])
         else:
-            f02 = nmt.NmtField(self._apomask, [dat2], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+            f02 = nmt.NmtField(self._apomask, [dat2], beam=hp.gauss_beam(beams[1], 3*self._nside-1))
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f01, f02, self._b)
@@ -581,15 +575,15 @@ class pstimator(object):
             cl00 = wsp.decouple_cell(cl00c)
             return (self._modes, cl00[0])
 
-    def autoBP_EB(self, maps, wsp=None, fwhms=None):
+    def autoBP_EB(self, maps, wsp=None, beams=None):
         dat = self.purified_eb(maps)
         # assemble NaMaster fields
-        if fwhms is None:
+        if beams is None:
             f0_e = nmt.NmtField(self._apomask, [dat[0]])
             f0_b = nmt.NmtField(self._apomask, [dat[1]])
         else:
-            f0_e = nmt.NmtField(self._apomask, [dat[0]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
-            f0_b = nmt.NmtField(self._apomask, [dat[1]], beam=hp.gauss_beam(fwhms, 3*self._nside-1))
+            f0_e = nmt.NmtField(self._apomask, [dat[0]], beam=hp.gauss_beam(beams, 3*self._nside-1))
+            f0_b = nmt.NmtField(self._apomask, [dat[1]], beam=hp.gauss_beam(beams, 3*self._nside-1))
         # estimate PS
         if wsp is None:
             cl00_e = nmt.compute_full_master(f0_e, f0_e, self._b)
@@ -602,22 +596,22 @@ class pstimator(object):
             cl00_b = wsp.decouple_cell(cl00c_b)
             return (self._modes, cl00_e[0], cl00_b[0])
 
-    def crosBP_EB(self, maps, wsp=None, fwhms=[None,None]):
+    def crosBP_EB(self, maps, wsp=None, beams=[None,None]):
         dat1 = self.purified_eb(maps[:3])
         dat2 = self.purified_eb(maps[3:])
         # assemble NaMaster fields
-        if fwhms[0] is None:
+        if beams[0] is None:
             f01_e = nmt.NmtField(self._apomask, [dat1[0]])
             f01_b = nmt.NmtField(self._apomask, [dat1[1]])
         else:
-            f01_e = nmt.NmtField(self._apomask, [dat1[0]], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
-            f01_b = nmt.NmtField(self._apomask, [dat1[1]], beam=hp.gauss_beam(fwhms[0], 3*self._nside-1))
-        if fwhms[1] is None:
+            f01_e = nmt.NmtField(self._apomask, [dat1[0]], beam=hp.gauss_beam(beams[0], 3*self._nside-1))
+            f01_b = nmt.NmtField(self._apomask, [dat1[1]], beam=hp.gauss_beam(beams[0], 3*self._nside-1))
+        if beams[1] is None:
             f02_e = nmt.NmtField(self._apomask, [dat2[0]])
             f02_b = nmt.NmtField(self._apomask, [dat2[1]]) 
         else:
-            f02_e = nmt.NmtField(self._apomask, [dat2[0]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
-            f02_b = nmt.NmtField(self._apomask, [dat2[1]], beam=hp.gauss_beam(fwhms[1], 3*self._nside-1))
+            f02_e = nmt.NmtField(self._apomask, [dat2[0]], beam=hp.gauss_beam(beams[1], 3*self._nside-1))
+            f02_b = nmt.NmtField(self._apomask, [dat2[1]], beam=hp.gauss_beam(beams[1], 3*self._nside-1))
         # estimate PS
         if wsp is None:
             cl00_e = nmt.compute_full_master(f01_e, f02_e, self._b)
@@ -630,8 +624,8 @@ class pstimator(object):
             cl00_b = wsp.decouple_cell(cl00c_b)
             return (self._modes, cl00_e[0], cl00_b[0])
 
-    def autoBP_TEB(self, maps, wsp=None, fwhms=None):
+    def autoBP_TEB(self, maps, wsp=None, beams=None):
         pass
 
-    def crosBP_TEB(self, maps, wsp=None, fwhms=[None,None]):
+    def crosBP_TEB(self, maps, wsp=None, beams=[None,None]):
         pass

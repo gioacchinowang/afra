@@ -1,2 +1,3 @@
+from .pipelines.pipeline import pipe
 from .pipelines.abs_pipeline import abspipe
-from .pipelines.tpfit_pipeline import tpfpipe
+from .pipelines.fit_pipeline import fitpipe

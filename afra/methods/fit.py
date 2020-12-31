@@ -1,34 +1,50 @@
 import numpy as np
+from afra.tools.aux import umap, gvec, hvec
+from afra.models.fg_models import fgmodel
+from afra.models.bg_models import bgmodel
+from dynesty import NestedSampler
 from afra.tools.icy_decorator import icy
-from afra.tools.aux import unity_mapper, vec_gauss, vec_hl
-from afra.tools.fg_models import fgmodel
-from afra.tools.bg_models import bgmodel
-from dynesty import DynamicNestedSampler
 
 
-@icy
-class tpfit(object):
+class fit(object):
 
-    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None, offset=None):
-        # measurements
-        self.signal = signal
+    def __init__(self, data, fiducial, noise, covariance, background=None, foreground=None):
+        """
+        Parameters
+        ----------
+        data : numpy.ndarray
+            measurements' band-power matrix
+
+        fiducial : numpy.ndarray
+            CMB+noise fiducial band-power matrix
+
+        noise : numpy.ndarray
+            noise band-power matrix
+
+        covariance : numpy.ndarray
+            covariance matrix
+
+        background : bgmodel object
+            background model instance
+
+        foreground : fgmodel object
+            foreground model instance
+        """
+        self.data = data
         self.fiducial = fiducial
         self.noise = noise
         self.covariance = covariance
-        self.offset = offset
-        # parameters
-        self.params = dict()
+        self.params = dict()  # initialized before back/fore-ground
         self.paramrange = dict()
-        self._activelist = set()
-        # models
+        self.activelist = set()  # active Bayeisan parameters
         self.background = background
         self.foreground = foreground
         if (self._foreground is None and self._background is None):
             raise ValueError('no activated model')
 
     @property
-    def signal(self):
-        return self._signal
+    def data(self):
+        return self._data
 
     @property
     def fiducial(self):
@@ -38,10 +54,6 @@ class tpfit(object):
     def noise(self):
         return self._noise
         
-    @property
-    def offset(self):
-        return self._offset
-
     @property
     def covariance(self):
         return self._covariance
@@ -56,25 +68,23 @@ class tpfit(object):
 
     @property
     def params(self):
-        """parameter name list"""
         return self._params
 
     @property
     def paramrange(self):
-        """parameter range"""
         return self._paramrange
 
     @property
     def activelist(self):
         return self._activelist
 
-    @signal.setter
-    def signal(self, signal):
-        assert isinstance(signal, np.ndarray)
-        assert (len(signal.shape) == 4)
-        if (np.isnan(signal).any()):
+    @data.setter
+    def data(self, data):
+        assert isinstance(data, np.ndarray)
+        assert (len(data.shape) == 4)
+        if (np.isnan(data).any()):
             raise ValueError('encounter nan')
-        self._signal = signal.copy()  # vectorized signal matrix
+        self._data = data.copy()
 
     @fiducial.setter
     def fiducial(self, fiducial):
@@ -92,16 +102,6 @@ class tpfit(object):
             raise ValueError('encounter nan')
         self._noise = noise.copy()
         
-    @offset.setter
-    def offset(self, offset):
-        if offset is None:
-            self._offset = np.zeros_like(self._noise)
-        else:
-            assert (offset.shape == self._noise.shape)
-            if (np.isnan(offset).any()):
-                raise ValueError('encounter nan')
-            self._offset = offset.copy()
-
     @covariance.setter
     def covariance(self, covariance):
         assert isinstance(covariance, np.ndarray)
@@ -110,7 +110,7 @@ class tpfit(object):
         if (np.isnan(covariance).any()):
             raise ValueError('encounter nan')
         assert (np.linalg.matrix_rank(covariance) == covariance.shape[0])
-        self._covariance = covariance.copy()  # vectorized cov matrix
+        self._covariance = covariance.copy()
 
     @params.setter
     def params(self, params):
@@ -121,6 +121,11 @@ class tpfit(object):
     def paramrange(self, paramrange):
         assert isinstance(paramrange, dict)
         self._paramrange = paramrange
+
+    @activelist.setter
+    def activelist(self, activelist):
+        assert isinstance(activelist, set)
+        self._activelist = activelist
 
     @foreground.setter
     def foreground(self, foreground):
@@ -158,31 +163,28 @@ class tpfit(object):
             self._activelist -= set(self._background.blacklist)
         if self._foreground is not None:
             self._activelist -= set(self._foreground.blacklist)
-        sampler = DynamicNestedSampler(self._core_likelihood,self.prior,len(self._activelist),**kwargs)
+        sampler = NestedSampler(self._core_likelihood,self.prior,len(self._activelist),**kwargs)
         sampler.run_nested()
         results = sampler.results
         names = sorted(self._activelist)
         for i in range(len(names)):
             low, high = self.paramrange[names[i]]
             for j in range(len(results.samples)):
-                results.samples[j, i] = unity_mapper(results.samples[j, i], [low, high])
+                results.samples[j, i] = umap(results.samples[j, i], [low, high])
         return results
 
     def _core_likelihood(self, cube):
-        """core log-likelihood calculator"""
-        # security boundary check
         if np.any(cube > 1.) or np.any(cube < 0.):
             return np.nan_to_num(-np.inf)
-        # map variable to model parameters
-        name_list = sorted(self._activelist)  # variable matches by alphabet order
+        name_list = sorted(self._activelist)
         for i in range(len(name_list)):
             name = name_list[i]
-            tmp = unity_mapper(cube[i], self._paramrange[name])
+            tmp = umap(cube[i], self._paramrange[name])
             if self._foreground is not None:
                 self._foreground.reset({name: tmp})
             if self._background is not None:
                 self._background.reset({name: tmp})
-        # predict signal
+        # predict data
         if self._foreground is None:
             return self.loglikeli(self._background.bandpower())
         elif self._background is None:
@@ -191,43 +193,53 @@ class tpfit(object):
             return self.loglikeli(self._foreground.bandpower() + self._background.bandpower())
 
     def prior(self, cube):
-        """flat prior"""
-        return cube
+        return cube  # flat prior
 
 
 @icy
-class tpfit_gauss(tpfit):
+class gaussfit(fit):
 
-    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None, offset=None):
-        super(tpfit_gauss, self).__init__(signal,fiducial,noise,covariance,background,foreground,offset)
+    def __init__(self, data, fiducial, noise, covariance, background=None, foreground=None):
+        super(gaussfit, self).__init__(data,fiducial,noise,covariance,background,foreground)
 
     def loglikeli(self, predicted):
-        """log-likelihood function"""
-        assert (predicted.shape == self._signal.shape)
-        diff = vec_gauss(predicted + self._noise - self._signal)
+        assert (predicted.shape == self._data.shape)
+        diff = gvec(predicted+self._noise-self._data)
         if (np.isnan(diff).any()):
             raise ValueError('encounter nan')
-        #(sign, logdet) = np.linalg.slogdet(self._covariance*2.*np.pi)
-        logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))#+sign*logdet)
+        logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))
         if np.isnan(logl):
             return np.nan_to_num(-np.inf)
         return logl
 
 
 @icy
-class tpfit_hl(tpfit):
+class hlfit(fit):
 
-    def __init__(self, signal, fiducial, noise, covariance, background=None, foreground=None, offset=None):
-       super(tpfit_hl, self).__init__(signal,fiducial,noise,covariance,background,foreground,offset)
+    def __init__(self, data, fiducial, noise, covariance, background=None, foreground=None, offset=None):
+        super(hlfit, self).__init__(data,fiducial,noise,covariance,background,foreground)
+        self.offset = offset
+
+    @property
+    def offset(self):
+        return self._offset
+
+    @offset.setter
+    def offset(self, offset):
+        if offset is None:
+            self._offset = np.zeros_like(self._noise,dtype=np.float32)
+        else:
+            assert (offset.shape == self._noise.shape)
+            if (np.isnan(offset).any()):
+                raise ValueError('encounter nan')
+            self._offset = offset.copy()
 
     def loglikeli(self, predicted):
-        """log-likelihood function"""
-        assert (predicted.shape == self._signal.shape)
-        diff = vec_hl(predicted+self._noise+self._offset,self._signal+self._offset,self._fiducial+self._offset)
+        assert (predicted.shape == self._data.shape)
+        diff = hvec(predicted+self._noise+self._offset,self._data+self._offset,self._fiducial+self._noise+self._offset)
         if (np.isnan(diff).any()):
             raise ValueError('encounter nan')
-        #(sign, logdet) = np.linalg.slogdet(self._covariance*2.*np.pi)
-        logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))#+sign*logdet)
+        logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))
         if np.isnan(logl):
             return np.nan_to_num(-np.inf)
         return logl

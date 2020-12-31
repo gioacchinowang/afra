@@ -1,8 +1,8 @@
 from setuptools import setup, find_packages
 
 setup(name="afra",
-      version="1.0.0",
-      description="AliCPT foreground removal analysis",
+      version="1.1.0",
+      description="AliCPT Foreground Removal Analysis",
       license="GPLv3",
       url="https://github.com/gioacchinowang/afra",
       packages=find_packages(),

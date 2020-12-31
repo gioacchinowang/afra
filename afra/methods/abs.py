@@ -4,13 +4,10 @@ from afra.tools.icy_decorator import icy
 
 @icy
 class abssep(object):
-    """
-    The ABS separator class.
-
-    """
+    
     def __init__(self, data, noise=None, sigma=None, shift=None, threshold=None):
         """
-        ABS separator class initialization function.
+        ABS class initialization function.
         
         Parameters:
         -----------

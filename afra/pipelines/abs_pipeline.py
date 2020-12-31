@@ -1,282 +1,60 @@
 import numpy as np
-import healpy as hp
-from afra.methods.abs import abssep
-from afra.tools.bg_models import *
-from afra.tools.ps_estimator import pstimator
-from afra.tools.aux import vec_gauss, oas_cov, unity_mapper
-from afra.methods.tpfit import tpfit_gauss, tpfit_hl
+from afra.pipelines.pipeline import pipe
+from afra.methods.abs import *
+from afra.methods.fit import * 
+from afra.tools.aux import gvec, empcov, oascov
 from afra.tools.icy_decorator import icy
 
 @icy
-class abspipe(object):
-    """The ABS pipeline for extracting CMB power-spectrum band power,
-        according to given measured sky maps at various frequency bands.
-    """
+class abspipe(pipe):
 
-    def __init__(self, data, noises=None, fiducials=None, mask=None, fwhms=None, fiducial_fwhms=None, targets='T', filt=None, background=None, likelihood='gauss'):
-        """
-        ABS pipeline init.
-        
-        Parameters
-        ----------
-        
-        data : dict
-            Measured data maps,
-            should be arranged in form: {frequency (GHz) : array(map #, pixel #)}.
-        
-        noises : dict
-            Simulated noise map samples,
-            should be arranged in form: {frequency (GHz): (sample #, map #, pixel #)}.
-        
-        fiducials: dict
-            Fiducial CMB maps (prepared),
-            should be arranged in form: {frequency (GHz): (sample #, map #, pixel #)}.
-        
-        mask : numpy.ndarray
-            Universal mask map, if None, assume full-sky coverage, otherwise,
-            should be arranged in shape: (pixel #,).
-        
-        fwhms : dict
-            FWHM (in rad) of (measurements') gaussian beams for each frequency,
-            if None, assume no observational beam.
-        
-        fiducial_fwhms: dict
-            Fiducial CMB fwhms.
-        
-        targets : str
-            Chosen among 'T', 'E', 'B', 'EB', 'TEB',
-            to instruct analyzing mode combination.
-        
-        filt : dict
-            Filtering-correction matrix for CMB (from filted to original),
-            entry name should at least contain "targets".
-        
-        background: str
-            CMB model type, chosen among "ncmb" and "acmb",
-            can be None if post-ABS analysis is not required.
-        """
-        self.data = data
-        self.noises = noises
-        self.mask = mask
-        self.fwhms = fwhms
-        self.targets = targets
-        # analyse select dict with keys defined by self._noise_flag
-        self._anadict = {(True): self.analyse_noisy,
-                           (False): self.analyse_quiet}
-        # debug mode
-        self.debug = False
-        # ps estimator
-        self._estimator = None
-        # filtering matrix dict
-        self.filt = filt
-        # background fiducial
-        self.fiducials = fiducials
-        self.fiducial_fwhms = fiducial_fwhms
-        # background model
-        self.background = background
-        self._background_obj = None
+    def __init__(self, data, noises=None, mask=None, beams=None, targets='T',
+                 fiducials=None, fiducial_beams=None,
+                 templates=None, template_noises=None, template_beams=None,
+                 foreground=None,background=None,
+                 likelihood='gauss', filt=None):
+        super(abspipe, self).__init__(data,noises,mask,beams,targets,fiducials,fiducial_beams,templates,template_noises,template_beams,None,background,likelihood,filt)
+        # analyse select dict
+        self._anadict = {True:self.analyse_noisy, False:self.analyse_quiet}
         # Bayesian engine, to be assigned
-        self._engine = None
-        self.likelihood = likelihood
-        # init parameter list
-        self.paramlist = list()
-        self.paramrange = dict()
-
-    @property
-    def data(self):
-        return self._data
-
-    @property
-    def noises(self):
-        return self._noises
-
-    @property
-    def mask(self):
-        return self._mask
- 
-    @property
-    def freqlist(self):
-        return self._freqlist
-
-    @property
-    def nfreq(self):
-        return self._nfreq
-
-    @property
-    def nside(self):
-        return self._nside
-
-    @property
-    def targets(self):
-        return self._targets
-
-    @property
-    def ntarget(self):
-        return self._ntarget
-
-    @property
-    def nsamp(self):
-        return self._nsamp
-
-    @property
-    def debug(self):
-        return self._debug
-
-    @property
-    def fwhms(self):
-        return self._fwhms
-
-    @property
-    def filt(self):
-        return self._filt
-
-    @property
-    def fiducials(self):
-        return self._fiducials
-
-    @property
-    def fiducial_fwhms(self):
-        return self._fiducial_fwhms
-
-    @property
-    def background(self):
-        return self._background
+        self.engine = None
+        # ABS results
+        self.absrslt = None
+        self.absinfo = dict()
 
     @property
     def engine(self):
         return self._engine
 
     @property
-    def likelihood(self):
-        return self._likelihood
+    def absrslt(self):
+        return self._absrslt
 
     @property
-    def paramlist(self):
-        return self._paramlist
+    def absinfo(self):
+        return self._absinfo
 
-    @property
-    def paramrange(self):
-        return self._paramrange
+    @engine.setter
+    def engine(self, engine):
+        if engine is not None:
+            assert isinstance(engine, fit)
+        self._engine = engine
 
-    @data.setter
-    def data(self, data):
-        """catch and register nfreq, nmap, npix and nside automatically.
-        """
-        assert isinstance(data, dict)
-        self._nfreq = len(data)
-        self._freqlist = sorted(data.keys())
-        assert (len(data[next(iter(data))].shape) == 2)
-        assert (data[next(iter(data))].shape[0] == 3)
-        self._npix = data[next(iter(data))].shape[1]
-        self._nside = int(np.sqrt(self._npix//12))
-        self._data = data.copy()
+    @absrslt.setter
+    def absrslt(self, absrslt):
+        if absrslt is not None:
+            assert isinstance(absrslt, np.ndarray)
+            if (len(absrslt.shape) == 2):
+                assert (absrslt.shape == (self._ntarget,self._estimator.nmode))
+            else:
+                assert (absrslt.shape == (self._nsamp,self._ntarget,self._estimator.nmode))
+        self._absrslt = absrslt
 
-    @noises.setter
-    def noises(self, noises):
-        if noises is not None:
-            assert isinstance(noises, dict)
-            assert (len(noises) == self._nfreq)
-            assert (len(noises[next(iter(noises))].shape) == 3)
-            self._nsamp = noises[next(iter(noises))].shape[0]
-            assert (noises[next(iter(noises))].shape[1] == 3)
-            assert (noises[next(iter(noises))].shape[2] == self._npix)
-            self._noises = noises.copy()
-            self._noise_flag = True
-        else:
-            self._noises = None
-            self._noise_flag = False
-
-    @mask.setter
-    def mask(self, mask):
-        if mask is None:
-            self._mask = np.ones(self._npix,dtype=np.float32)
-        else:
-            assert isinstance(mask, np.ndarray)
-            assert (len(mask) == self._npix)
-            self._mask = mask.copy()
-        # clean up input maps with mask
-        for f in self._freqlist:
-            self._data[f][:,self._mask==0.] = 0.
-            if self._noises is not None:
-                    self._noises[f][:,:,self._mask==0.] = 0.
-
-    @debug.setter
-    def debug(self, debug):
-        assert isinstance(debug, bool)
-        self._debug = debug
-
-    @fwhms.setter
-    def fwhms(self, fwhms):
-        if fwhms is not None:
-            assert isinstance(fwhms, dict)
-            assert (len(fwhms) == self._nfreq)
-            self._fwhms = fwhms.copy()
-        else:
-            self._fwhms = dict()
-            for f in self._freqlist:
-                self._fwhms[f] = None
-
-    @targets.setter
-    def targets(self, targets):
-        assert isinstance(targets, str)
-        self._targets = targets
-        self._ntarget = len(targets)
-
-    @filt.setter
-    def filt(self, filt):
-        if filt is not None:
-            assert isinstance(filt, dict)
-            assert (self._targets in filt)
-        self._filt = filt
-
-    @fiducials.setter
-    def fiducials(self, fiducials):
-        if self._noise_flag:
-            assert isinstance(fiducials, dict)
-            assert (len(fiducials) == 1)
-            assert (fiducials[next(iter(fiducials))].shape == (self._nsamp,3,self._npix))
-            self._fiducials = fiducials.copy()
-        else:
-            self._fiducials = None
-
-    @fiducial_fwhms.setter
-    def fiducial_fwhms(self, fiducial_fwhms):
-        if fiducial_fwhms is not None:
-            assert isinstance(fiducial_fwhms, dict)
-            assert (fiducial_fwhms.keys() == self._fiducials.keys())
-            self._fiducial_fwhms = fiducial_fwhms.copy()
-        elif self._noise_flag:
-            self._fiducial_fwhms = dict()
-            for name in list(self._fiducials.keys()):
-                self._fiducial_fwhms[name] = None
-        else:
-            self._fiducial_fwhms = None
-
-    @likelihood.setter
-    def likelihood(self, likelihood):
-        assert isinstance(likelihood, str)
-        self._likelihood = likelihood
-
-    @background.setter
-    def background(self, background):
-        if background is None:
-            self._background = None
-        else:
-            assert isinstance(background, str)
-            if (background == 'ncmb'):
-                self._background = ncmbmodel
-            elif (background == 'acmb'):
-                self._background = acmbmodel
-
-    @paramlist.setter
-    def paramlist(self, paramlist):
-        assert isinstance(paramlist, list)
-        self._paramlist = paramlist
-
-    @paramrange.setter
-    def paramrange(self, paramrange):
-        assert isinstance(paramrange, dict)
-        self._paramrange = paramrange
+    @absinfo.setter
+    def absinfo(self, absinfo):
+        if absinfo is not None:
+            assert isinstance(absinfo, dict)
+        self._absinfo = absinfo
 
     def run(self, aposcale, psbin, lmin=None, lmax=None, shift=None, threshold=None, kwargs=dict()):
         """
@@ -295,11 +73,11 @@ class abspipe(object):
         assert (aposcale > 0)
         assert (self._background is not None)
         # preprocess
-        bp_s, bp_f, bp_n = self.preprocess(aposcale, psbin, lmin, lmax)
+        self.preprocess(aposcale, psbin, lmin, lmax)
         # method selection
-        bp_cmb = self.analyse(bp_s, bp_n, shift, threshold)[1]
+        self.analyse(shift, threshold)
         # post analysis
-        return self.postprocess(bp_cmb, bp_f, kwargs)
+        return self.postprocess(kwargs)
 
     def run_absonly(self, aposcale, psbin, lmin=None, lmax=None, shift=None, threshold=None):
         """
@@ -314,158 +92,72 @@ class abspipe(object):
         assert (psbin > 0)
         assert (aposcale > 0)
         # preprocess
-        bp_s, bp_f, bp_n = self.preprocess(aposcale, psbin, lmin, lmax)
+        self.preprocess(aposcale, psbin, lmin, lmax)
         # method selection
-        return self.analyse(bp_s, bp_n, shift, threshold)
+        self.analyse(shift, threshold)
+        return (self._estimator.modes, self._absrslt, self._absinfo)
 
-    def preprocess(self, aposcale, psbin, lmin=None, lmax=None):
-        """
-        ABS preprocess routine, converts maps into band-powers.
+    def analyse(self, shift, threshold):
+        self._anadict[self._noise_flag](shift, threshold)
 
-        Parameters
-        ----------
-
-        aposcale : float
-            Apodization scale.
-
-        psbin : integer
-            Number of angular modes in each bin,
-            for conducting pseudo-PS estimation.
-
-        lmin/lmax : integer
-            Lower/Upper multipole limit.
-
-        Returns
-        -------
-            (data bp, fiducial bp, noise bp)
-        """
-        assert isinstance(aposcale, float)
-        assert isinstance(psbin, int)
-        assert (psbin > 0)
-        assert (aposcale > 0)
-        # init PS estimator
-        self._estimator = pstimator(nside=self._nside,mask=self._mask,aposcale=aposcale,psbin=psbin,lmin=lmin,lmax=lmax,targets=self._targets,filt=self._filt)
-        # run trial PS estimations for workspace template
-        if not self._noise_flag:
-            # prepare total data PS in the shape required by ABS method
-            data_bp = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
-            for i in range(self._nfreq):
-                _fi = self._freqlist[i]
-                # auto correlation
-                stmp = self._estimator.autoBP(self._data[_fi],fwhms=self._fwhms[_fi])
-                # assign results
-                for t in range(self._ntarget):
-                    for k in range(self._estimator.nmode):
-                        data_bp[t,k,i,i] = stmp[1+t][k]
-                # cross correlation
-                for j in range(i+1,self._nfreq):
-                    _fj = self._freqlist[j]
-                    stmp = self._estimator.crosBP(np.r_[self._data[_fi],self._data[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
-                    for t in range(self._ntarget):
-                        for k in range(self._estimator.nmode):
-                            data_bp[t,k,i,j] = stmp[1+t][k]
-                            data_bp[t,k,j,i] = stmp[1+t][k]
-            return (data_bp, None, None)
-        else:
-            # run trial PS estimations for workspace template
-            wsp_dict = dict()
-            for i in range(self._nfreq):
-                _fi = self._freqlist[i]
-                wsp_dict[(i,i)] = self._estimator.autoWSP(self._data[_fi],fwhms=self._fwhms[_fi])
-                for j in range(i+1,self._nfreq):
-                    _fj = self._freqlist[j]
-                    wsp_dict[(i,j)] = self._estimator.crosWSP(np.r_[self._data[_fi],self._data[_fj]],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
-            # allocate
-            noise_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
-            data_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float32)
-            fiducial_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode),dtype=np.float32)
-            for s in range(self._nsamp):
-                # fiducial
-                _ff = list(self._fiducials.keys())[0]
-                ftmp = self._estimator.autoBP(self._fiducials[_ff][s],fwhms=self._fiducial_fwhms[_ff])
-                for t in range(self._ntarget):
-                    fiducial_bp[s,t] = ftmp[1+t]
-                # prepare noise samples on-fly
-                for i in range(self._nfreq):
-                    _fi = self._freqlist[i]
-                    # auto correlation
-                    ntmp = self._estimator.autoBP(self._noises[_fi][s],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
-                    stmp = self._estimator.autoBP(self._data[_fi],wsp=wsp_dict[(i,i)],fwhms=self._fwhms[_fi])
-                    # assign results
-                    for t in range(self._ntarget):
-                        for k in range(self._estimator.nmode):
-                            noise_bp[s,t,k,i,i] = ntmp[1+t][k]
-                            data_bp[s,t,k,i,i] = stmp[1+t][k]+ntmp[1+t][k]
-                    # cross correlation
-                    for j in range(i+1,self._nfreq):
-                        _fj = self._freqlist[j]
-                        # cross correlation
-                        ntmp = self._estimator.crosBP(np.r_[self._noises[_fi][s],self._noises[_fj][s]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
-                        stmp = self._estimator.crosBP(np.r_[self._data[_fi],self._data[_fj]],wsp=wsp_dict[(i,j)],fwhms=[self._fwhms[_fi],self._fwhms[_fj]])
-                        for t in range(self._ntarget):
-                            for k in range(self._estimator.nmode):
-                                noise_bp[s,t,k,i,j] = ntmp[1+t][k]
-                                noise_bp[s,t,k,j,i] = ntmp[1+t][k]
-                                data_bp[s,t,k,i,j] = stmp[1+t][k]+ntmp[1+t][k]
-                                data_bp[s,t,k,j,i] = stmp[1+t][k]+ntmp[1+t][k]
-            return (data_bp, fiducial_bp, noise_bp)
-
-    def analyse(self, bp_data, bp_noise, shift, threshold):
-        return self._anadict[self._noise_flag](bp_data, bp_noise, shift, threshold)
-
-    def analyse_quiet(self, data, noise=None, shift=None, threshold=None):
+    def analyse_quiet(self, shift=None, threshold=None):
         """
         Noise-free CMB (band power) extraction.
-        
-        Returns
-        -------
-            (angular modes, requested PS, eigen info)
         """
         # send PS to ABS method, noiseless case requires no shift nor threshold
-        rslt = np.empty((self._ntarget,self._estimator.nmode),dtype=np.float32)
-        info = dict()
+        self.absrslt = np.zeros((self._ntarget,self._estimator.nmode),dtype=np.float64)
         for t in range(self._ntarget):
-            spt = abssep(data[t],shift=None,threshold=None)
-            rslt[t] = spt.run()
+            spt = abssep(self._data_bp[t],shift=None,threshold=None)
+            self._absrslt[t] = spt.run()
             if self._debug:
-                info[self._targets[t]] = spt.run_info()
-        return (self._estimator.modes, rslt, info)
+                self._absinfo[self._targets[t]] = spt.run_info()
 
-    def analyse_noisy(self, data, noise, shift, threshold):
+    def analyse_noisy(self, shift, threshold):
         # get noise PS mean and rms
-        noise_mean = np.mean(noise,axis=0)
-        noise_std = np.std(noise,axis=0)
-        noise_std_diag = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq),dtype=np.float32)
+        noise_mean = np.mean(self._noise_bp,axis=0)
+        noise_std = np.std(self._noise_bp,axis=0)
+        noise_std_diag = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq),dtype=np.float64)
         for t in range(self._ntarget):
             for l in range(self._estimator.nmode):
                 noise_std_diag[t,l] = np.diag(noise_std[t,l])
+        # assemble data+noise-noise_mean
+        ndat = self._noise_bp.copy()
+        for s in range(self._nsamp):
+            ndat[s] += self._data_bp - noise_mean
         # shift for each angular mode independently
         safe_shift = shift*np.mean(noise_std_diag,axis=2)  # safe_shift in shape (nmode,ntarget)
-        rslt = np.empty((self._nsamp,self._ntarget,self._estimator.nmode),dtype=np.float32)
-        info = dict()
+        self.absrslt = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode),dtype=np.float64)
         for s in range(self._nsamp):
             for t in range(self._ntarget):
                 # send PS to ABS method
-                spt = abssep(data[s,t]-noise_mean[t],noise_mean[t],noise_std_diag[t],shift=safe_shift[t],threshold=threshold)
-                rslt[s,t] = spt.run()
+                spt = abssep(ndat[s,t],noise_mean[t],noise_std_diag[t],shift=safe_shift[t],threshold=threshold)
+                self.absrslt[s,t] = spt.run()
                 if self._debug:
-                    info[self._targets[t]] = spt.run_info()
-        return (self._estimator.modes, rslt, info)
+                    self.absinfo[self._targets[t]] = spt.run_info()
 
-    def postprocess(self, cmb_bp, fiducial_bp, kwargs=dict()):
-        # prepare model, parameter list generated during init models
-        if self._background is not None:
-            self._background_obj = self._background(list(self._fiducials.keys()),self._estimator)
-        # estimate M
-        assert (cmb_bp.shape == (self._nsamp,self._ntarget,self._estimator.nmode))
-        x_hat = cmb_bp.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
-        x_fid = fiducial_bp.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
-        n_hat = np.zeros((self._ntarget,self._estimator.nmode,1,1),dtype=np.float32)
-        x_mat = oas_cov(vec_gauss(0.5*(x_hat+x_fid)))
+    def postprocess(self, kwargs=dict()):
+        # force nfreq=1
+        self._nfreq = 1
+        self._background_obj._nfreq = 1
+        # assemble fiducial+abs
+        abs_bp = self._absrslt.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
+        abs_fid = self._fiducial_bp[:,:,:,0,0].reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
+        # cov matrix
+        # empirical cov
+        #self.covmat = empcov(gvec(0.5*(abs_bp+abs_fid)))
+        # specialized oas cov
+        xfid = gvec(0.5*(abs_bp+abs_fid))
+        self.covmat = oascov(xfid)
+        if self._ntarget > 1:  # recalculate for diagnol T/E/B blocks
+            nblock = len(self._covmat)//self._ntarget
+            for t in range(self._ntarget):
+                self._covmat[nblock*t:nblock*(t+1),nblock*t:nblock*(t+1)] = oascov(xfid[:,nblock*t:nblock*(t+1)])
+        # null noise
+        null_noise = np.zeros((self._ntarget,self._estimator.nmode,1,1),dtype=np.float64)
         if (self._likelihood == 'gauss'):
-            self._engine = tpfit_gauss(np.mean(x_hat,axis=0),np.mean(x_fid,axis=0),n_hat,x_mat,self._background_obj)
+            self._engine = gaussfit(np.mean(abs_bp,axis=0),np.mean(abs_fid,axis=0),null_noise,self._covmat,self._background_obj)
         elif (self._likelihood == 'hl'):
-            self._engine = tpfit_hl(np.mean(x_hat,axis=0),np.mean(x_fid,axis=0),n_hat,x_mat,self._background_obj)
+            self._engine = hlfit(np.mean(abs_bp,axis=0),np.mean(abs_fid,axis=0),null_noise,self._covmat,self._background_obj)
         if (len(self._paramrange)):
             self._engine.rerange(self._paramrange)
         rslt = self._engine.run(kwargs)

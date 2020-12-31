@@ -1,32 +1,19 @@
-"""
-Galactic foreground models
-
-- syncmodel
-    synchrotron cross-correlation band power
-    
-- dustmodel
-    thermal dust cross-correlation band power
-    
-- syncdustmodel
-    synchrotron-dust correlation contribution band power
-"""
 import numpy as np
-from afra.tools.icy_decorator import icy
 from afra.tools.ps_estimator import pstimator
+from afra.tools.icy_decorator import icy
 
 
-@icy
 class fgmodel(object):
 
-    def __init__(self, freqlist, estimator, template_ps=None):
+    def __init__(self, freqlist, estimator, template_bp=None):
         self.freqlist = freqlist
         self.estimator = estimator
-        self.template_ps = template_ps
-        self._params = dict()  # base class holds empty dict
-        self._paramlist = list()
-        self._blacklist = list()
-        self._paramrange = dict()
-        self._paramdft = dict()
+        self.template_bp = template_bp
+        self.params = dict()  # base class holds empty dict
+        self.paramrange = dict()
+        self.paramdft = dict()
+        self.paramlist = list()
+        self.blacklist = list()
 
     @property
     def freqlist(self):
@@ -41,20 +28,12 @@ class fgmodel(object):
         return self._estimator
 
     @property
-    def template_ps(self):
-        return self._template_ps
-
-    @property
-    def template_freqlist(self):
-        return self._template_freqlist
-
-    @property
-    def template_nfreq(self):
-        return self._template_nfreq
-
-    @property
     def params(self):
         return self._params
+
+    @property
+    def paramrange(self):
+        return self._paramrange
 
     @property
     def paramdft(self):
@@ -69,8 +48,20 @@ class fgmodel(object):
         return self._blacklist
 
     @property
-    def paramrange(self):
-        return self._paramrange
+    def template_bp(self):
+        return self._template_bp
+
+    @property
+    def template_flag(self):
+        return self._template_flag
+
+    @property
+    def template_freqlist(self):
+        return self._template_freqlist
+
+    @property
+    def template_nfreq(self):
+        return self._template_nfreq
 
     @freqlist.setter
     def freqlist(self, freqlist):
@@ -83,21 +74,49 @@ class fgmodel(object):
         assert isinstance(estimator, pstimator)
         self._estimator = estimator
 
-    @template_ps.setter
-    def template_ps(self, template_ps):
+    @params.setter
+    def params(self, params):
+        assert isinstance(params, dict)
+        self._params = params
+
+    @paramdft.setter
+    def paramdft(self, paramdft):
+        assert isinstance(paramdft, dict)
+        self._paramdft = paramdft
+
+    @paramrange.setter
+    def paramrange(self, paramrange):
+        assert isinstance(paramrange, dict)
+        self._paramrange = paramrange
+
+    @paramlist.setter
+    def paramlist(self, paramlist):
+        assert isinstance(paramlist, (list,tuple))
+        self._paramlist = paramlist
+
+    @blacklist.setter
+    def blacklist(self, blacklist):
+        assert isinstance(blacklist, (list,tuple))
+        for p in blacklist:
+            assert (p in self._paramlist)
+        self._blacklist = blacklist
+
+    @template_bp.setter
+    def template_bp(self, template_bp):
         """template maps at two frequency bands"""
-        if template_ps is not None:
-            assert isinstance(template_ps, dict)
-            self._template_freqlist = sorted(template_ps.keys())
-            self._template_nfreq = len(template_ps)
+        if template_bp is not None:
+            assert isinstance(template_bp, dict)
+            self._template_freqlist = sorted(template_bp.keys())
+            self._template_nfreq = len(self._template_freqlist)
             assert (self._template_nfreq < 3)
-            assert (template_ps[next(iter(template_ps))].shape == (self._estimator._ntarget,self._estimator._nmode))
+            assert (template_bp[next(iter(template_bp))].shape == (self._estimator._ntarget,self._estimator._nmode))
             self._template_flag = True
-            self._template_ps = template_ps
+            self._template_bp = template_bp
         else:
             self._template_flag = False
-            self._template_ps = None
             self._template_freqlist = list()
+            self._template_nfreq = 0
+            self._template_bp = None
 
     def initdft(self):
         """register default parameter values
@@ -132,15 +151,14 @@ class asyncmodel(fgmodel):
     beta_s: frequency scaling index
     """
 
-    def __init__(self, freqlist, estimator, template_ps=None):
-        super(asyncmodel, self).__init__(freqlist,estimator,template_ps)
-        self._paramlist = self.initlist()
-        self._paramrange = self.initrange()
-        self._paramdft = self.initdft()
-        # calculate template PS
-        assert (self._template_flag == False)
+    def __init__(self, freqlist, estimator, template_bp=None):
+        super(asyncmodel, self).__init__(freqlist,estimator,template_bp)
+        self.paramlist = self.initlist()
+        self.paramrange = self.initrange()
+        self.paramdft = self.initdft()
+        assert (not self._template_flag)
         # reference frequency
-        self._template_freqlist = [23]
+        self.template_freqlist = [23]
 
     def initlist(self):
         """parameters are set as
@@ -172,8 +190,8 @@ class asyncmodel(fgmodel):
         """
         beta_val_s = self.params['beta_s']
         ref = self._template_freqlist[0]
-        dl_tmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float32)/80.)**self._params['alpha_s'])
-        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        dl_tmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_s'])
+        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         # estimate bandpower from templates
         for t in range(self._estimator._ntarget):
             bp_s = self._params['A_s'+self._estimator._targets[t]]*dl_tmp
@@ -197,11 +215,11 @@ class tsyncmodel(fgmodel):
     beta_s: frequency scaling index
     """
     
-    def __init__(self, freqlist, estimator, template_ps=None):
-        super(tsyncmodel, self).__init__(freqlist,estimator,template_ps)
-        self._paramlist = self.initlist()
-        self._paramrange = self.initrange()
-        self._paramdft = self.initdft()
+    def __init__(self, freqlist, estimator, template_bp=None):
+        super(tsyncmodel, self).__init__(freqlist,estimator,template_bp)
+        self.paramlist = self.initlist()
+        self.paramrange = self.initrange()
+        self.paramdft = self.initdft()
         # calculate template PS
         assert (self._template_flag)
         assert (self._template_nfreq == 1)
@@ -230,9 +248,9 @@ class tsyncmodel(fgmodel):
         """
         beta_val_s = self.params['beta_s']
         ref = self._template_freqlist[0]
-        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         # estimate bandpower from templates
-        ps_s = self._template_ps[ref]
+        ps_s = self._template_bp[ref]
         for t in range(self._estimator._ntarget):
             bp_s = ps_s[t]
             for i in range(self._nfreq):
@@ -250,14 +268,13 @@ class tsyncmodel(fgmodel):
 @icy
 class adustmodel(fgmodel):
 
-    def __init__(self, freqlist, estimator, template_ps=None):
-        super(adustmodel, self).__init__(freqlist,estimator,template_ps)
-        self._paramlist = self.initlist()
-        self._paramrange = self.initrange()
-        self._paramdft = self.initdft()
-        # calculate template PS
-        assert (self._template_flag == False)
-        self._template_freqlist = [353.]
+    def __init__(self, freqlist, estimator, template_bp=None):
+        super(adustmodel, self).__init__(freqlist,estimator,template_bp)
+        self.paramlist = self.initlist()
+        self.paramrange = self.initrange()
+        self.paramdft = self.initdft()
+        assert (not self._template_flag)
+        self.template_freqlist = [353.]
 
     def initlist(self):
         """parameters are set as
@@ -293,8 +310,8 @@ class adustmodel(fgmodel):
         """
         beta_val_d = self.params['beta_d']
         ref = self._template_freqlist[0]
-        dl_tmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float32)/80.)**self._params['alpha_d'])
-        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        dl_tmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_d'])
+        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         for t in range(self._estimator._ntarget):
             bp_d = self._params['A_d'+self._estimator._targets[t]]*dl_tmp
             for i in range(self._nfreq):
@@ -312,12 +329,11 @@ class adustmodel(fgmodel):
 @icy
 class tdustmodel(fgmodel):
    
-    def __init__(self, freqlist, estimator, template_ps=None):
-        super(tdustmodel, self).__init__(freqlist,estimator,template_ps)
-        self._paramlist = self.initlist()
-        self._paramrange = self.initrange()
-        self._paramdft = self.initdft()
-        # calculate template PS
+    def __init__(self, freqlist, estimator, template_bp=None):
+        super(tdustmodel, self).__init__(freqlist,estimator,template_bp)
+        self.paramlist = self.initlist()
+        self.paramrange = self.initrange()
+        self.paramdft = self.initdft()
         assert (self._template_flag)
         assert (self._template_nfreq == 1)
 
@@ -349,9 +365,9 @@ class tdustmodel(fgmodel):
         """
         beta_val_d = self.params['beta_d']
         ref = self._template_freqlist[0]
-        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         # estimate bandpower from templates
-        ps_d = self._template_ps[ref]
+        ps_d = self._template_bp[ref]
         for t in range(self._estimator._ntarget):
             bp_d = ps_d[t]
             for i in range(self._nfreq):
@@ -369,14 +385,13 @@ class tdustmodel(fgmodel):
 @icy
 class asyncadustmodel(fgmodel):
 
-    def __init__(self, freqlist, estimator, template_ps=None):
-        super(asyncadustmodel, self).__init__(freqlist,estimator,template_ps)
-        self._paramlist = self.initlist()
-        self._paramrange = self.initrange()
-        self._paramdft = self.initdft()
-        # calculate template PS
-        assert (self._template_flag == False)
-        self._template_freqlist = [23.,353.]
+    def __init__(self, freqlist, estimator, template_bp=None):
+        super(asyncadustmodel, self).__init__(freqlist,estimator,template_bp)
+        self.paramlist = self.initlist()
+        self.paramrange = self.initrange()
+        self.paramdft = self.initdft()
+        assert (not self._template_flag)
+        self.template_freqlist = [23.,353.]
 
     def initlist(self):
         """parameters are set as
@@ -423,9 +438,9 @@ class asyncadustmodel(fgmodel):
         rho = self.params['rho']
         ref_s = self._template_freqlist[0]
         ref_d = self._template_freqlist[1]
-        dl_stmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float32)/80.)**self._params['alpha_s']) 
-        dl_dtmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float32)/80.)**self._params['alpha_d'])
-        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        dl_stmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_s']) 
+        dl_dtmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_d'])
+        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         for t in range(self._estimator._ntarget):
             bp_s = self._params['A_s'+self._estimator._targets[t]]*dl_stmp
             bp_d = self._params['A_d'+self._estimator._targets[t]]*dl_dtmp
@@ -452,12 +467,11 @@ class asyncadustmodel(fgmodel):
 @icy
 class tsynctdustmodel(fgmodel):
 
-    def __init__(self, freqlist, estimator, template_ps=None):
-        super(tsynctdustmodel, self).__init__(freqlist,estimator,template_ps)
-        self._paramlist = self.initlist()
-        self._paramrange = self.initrange()
-        self._paramdft = self.initdft()
-        # calculate template PS
+    def __init__(self, freqlist, estimator, template_bp=None):
+        super(tsynctdustmodel, self).__init__(freqlist,estimator,template_bp)
+        self.paramlist = self.initlist()
+        self.paramrange = self.initrange()
+        self.paramdft = self.initdft()
         assert (self._template_flag)
         assert (self._template_nfreq == 2)
 
@@ -496,10 +510,10 @@ class tsynctdustmodel(fgmodel):
         rho = self.params['rho']
         ref_s = self._template_freqlist[0]
         ref_d = self._template_freqlist[1]
-        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float32)
+        dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         # estimate bandpower from templates
-        ps_s = self._template_ps[ref_s]
-        ps_d = self._template_ps[ref_d]
+        ps_s = self._template_bp[ref_s]
+        ps_d = self._template_bp[ref_d]
         for t in range(self._estimator._ntarget):
             bp_s = ps_s[t]
             bp_d = ps_d[t]
