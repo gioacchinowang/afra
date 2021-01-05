@@ -143,15 +143,16 @@ class abspipe(pipe):
         abs_bp = self._absrslt.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
         abs_fid = self._fiducial_bp[:,:,:,0,0].reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
         # cov matrix
-        # empirical cov
-        #self.covmat = empcov(gvec(0.5*(abs_bp+abs_fid)))
-        # specialized oas cov
-        xfid = gvec(0.5*(abs_bp+abs_fid))
-        self.covmat = oascov(xfid)
+        # empirical cov for postABS
+        #self.covmat = 2.*empcov(gvec(abs_bp)) + empcov(gvec(abs_fid))
+        # specialized oas cov for postABS
+        xcov = gvec(abs_bp)
+        fcov = gvec(abs_fid)
+        self.covmat = 2.*oascov(xcov) + oascov(fcov)
         if self._ntarget > 1:  # recalculate for diagnol T/E/B blocks
             nblock = len(self._covmat)//self._ntarget
             for t in range(self._ntarget):
-                self._covmat[nblock*t:nblock*(t+1),nblock*t:nblock*(t+1)] = oascov(xfid[:,nblock*t:nblock*(t+1)])
+                self._covmat[nblock*t:nblock*(t+1),nblock*t:nblock*(t+1)] = 2.*oascov(xcov[:,nblock*t:nblock*(t+1)]) + oascov(fcov[:,nblock*t:nblock*(t+1)])
         # null noise
         null_noise = np.zeros((self._ntarget,self._estimator.nmode,1,1),dtype=np.float64)
         if (self._likelihood == 'gauss'):
