@@ -109,7 +109,6 @@ class fit(object):
         assert (covariance.shape[0] == covariance.shape[1])
         if (np.isnan(covariance).any()):
             raise ValueError('encounter nan')
-        assert (np.linalg.matrix_rank(covariance) == covariance.shape[0])
         self._covariance = covariance.copy()
 
     @params.setter
@@ -207,7 +206,8 @@ class gaussfit(fit):
         diff = gvec(predicted+self._noise-self._data)
         if (np.isnan(diff).any()):
             raise ValueError('encounter nan')
-        logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))
+        #logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))
+        logl = -0.5*(np.vdot(diff,np.linalg.lstsq(self._covariance,diff,rcond=None)[0]))
         if np.isnan(logl):
             return np.nan_to_num(-np.inf)
         return logl
@@ -239,7 +239,8 @@ class hlfit(fit):
         diff = hvec(predicted+self._noise+self._offset,self._data+self._offset,self._fiducial+self._noise+self._offset)
         if (np.isnan(diff).any()):
             raise ValueError('encounter nan')
-        logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))
+        #logl = -0.5*(np.vdot(diff,np.matmul(np.linalg.pinv(self._covariance),diff)))
+        logl = -0.5*(np.vdot(diff,np.linalg.lstsq(self._covariance,diff,rcond=None)[0]))
         if np.isnan(logl):
             return np.nan_to_num(-np.inf)
         return logl

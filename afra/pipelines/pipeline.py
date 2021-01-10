@@ -597,15 +597,14 @@ class pipe(object):
         # STEP V
         # fiducial+noise PS covariance matrix
         if self._fiducial_flag and self._noise_flag:
-            # trivial empirical cov estimation
-            #self.covmat = empcov(gvec(self._fiducial_bp+self._noise_bp))
-            # specialized OAS cov estimation, useful for low sample size
-            xfid = gvec(self._fiducial_bp+self._noise_bp)
-            self.covmat = oascov(xfid)
-            if self._ntarget > 1:  # recalculate for diagnol T/E/B blocks
-                nblock = len(self._covmat)//self._ntarget
-                for t in range(self._ntarget):
-                    self._covmat[nblock*t:nblock*(t+1),nblock*t:nblock*(t+1)] = oascov(xfid[:,nblock*t:nblock*(t+1)])
+            # block cov
+            xfid = gvec(self._fiducial_bp)
+            xnoi = gvec(self._noise_bp)
+            self.covmat = np.zeros((xfid.shape[1],xfid.shape[1]),dtype=np.float64)
+            nblock = len(self._covmat)//self._ntarget
+            for t in range(self._ntarget):
+                self._covmat[nblock*t:nblock*(t+1),nblock*t:nblock*(t+1)] = oascov(xfid[:,nblock*t:nblock*(t+1)],self._nfreq*(self._nfreq+1)//2) + oascov(xnoi[:,nblock*t:nblock*(t+1)])  # OAS covariance estimation
+                #empcov(xfid[:,nblock*t:nblock*(t+1)]) + empcov(xnoi[:,nblock*t:nblock*(t+1)])  # empirical covariance estimation
 
     def reprocess(self, data):
         """

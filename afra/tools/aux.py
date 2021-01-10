@@ -3,48 +3,55 @@ import healpy as hp
 from scipy.linalg import sqrtm
 
 
-def oascov(sample):
+def empcov(sample):
     """
-    OAS covariance estimator.
-    
+    empirical covariance matrix estimation with SVD
+
     Parameters
     ----------
-    sample : numpy.ndarray
-        ensemble of observables, in shape (# ensemble,# data)
+    sample:
+        input sample
+    """
+    assert isinstance(sample, np.ndarray)
+    n,p = sample.shape
+    assert (n>0 and p>0)
+    # empirical estimation
+    if n == 1:
+        return np.zeros((p,p))
+    m = np.mean(sample,axis=0)
+    u = sample-m
+    s = np.dot(u.T,u)/(n-1)
+    return s
 
-    Returns
-    -------
-    
-    covariance matrix : numpy.ndarray
-        covariance matrix in shape (data_size,data_size)
+
+def oascov(sample, bsize=1):
+    """
+    OAS shrinkage covariance matrix estimation with block
+
+    Parameters
+    ---------
+    sample:
+        input sample
+
+    bsize:
+        block size
     """
     assert isinstance(sample,np.ndarray)
     n,p = sample.shape
     assert (n>0 and p>0)
+    # empirical estimation
     if n == 1:
         return np.zeros((p,p))
     m = np.mean(sample,axis=0)
     u = sample-m
-    s = np.dot(u.T,u)/n
-    trs = np.trace(s)
-    mu = (trs/p)
+    s = np.dot(u.T,u)/(n-1)
+    # rho is block invariant
+    mu = (np.trace(s)/p)
     alpha = np.mean(s**2)
     numerator = alpha+mu**2
     denominator = (n+1.)*(alpha-(mu**2)/p)
     rho = 1. if denominator == 0 else min(1., numerator/denominator)
-    return (1.-rho)*s+np.eye(p)*rho*trs/p
-
-
-def empcov(sample):
-    assert isinstance(sample, np.ndarray)
-    n,p = sample.shape
-    assert (n>0 and p>0)
-    if n == 1:
-        return np.zeros((p,p))
-    m = np.mean(sample,axis=0)
-    u = sample-m
-    s = np.dot(u.T,u)/n
-    return s
+    return (1.-rho)*s+np.kron(np.eye(p//bsize),np.ones((bsize,bsize)))*rho*mu
 
 
 def umap(x, r=[0.,1.]):
@@ -98,7 +105,6 @@ def gvec(cps):
         for t in range(ntype):
             for l in range(nmode):
                 rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = cps[t,l][triu_idx]  # type leading
-                #rslt[(l*ntype+t)*dof:(l*ntype+t+1)*dof] = cps[t,l][triu_idx]  # mode leading
         return rslt
     elif (len(cps.shape) == 5):  # ensemble
         nsamp = cps.shape[0]
@@ -107,7 +113,6 @@ def gvec(cps):
             for t in range(ntype):
                 for l in range(nmode):
                     rslt[s,(t*nmode+l)*dof:(t*nmode+l+1)*dof] = cps[s,t,l][triu_idx]  # type leading
-                    #rslt[s,(l*ntype+t)*dof:(l*ntype+t+1)*dof] = cps[s,t,l][triu_idx]  # mode leading
         return rslt
     else:
         raise ValueError('unsupported input shape')
@@ -130,14 +135,13 @@ def hvec(cps,cps_hat,cps_fid):
             c_h = cps_hat[t,l]
             c_f = sqrtm(cps_fid[t,l])
             c_inv = sqrtm(np.linalg.inv(cps[t,l]))
-            res = np.dot(np.conjugate(c_inv), np.dot(c_h, c_inv))
-            [d, u] = np.linalg.eigh(res)
+            res = np.matmul(np.conjugate(c_inv), np.matmul(c_h, c_inv))
+            d,u = np.linalg.eigh(res)
             assert (any(d>=0))
             #if (any(d<0)):
             #    rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] *= np.nan_to_num(np.inf)
             gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
-            x = np.dot(gd, np.dot(np.transpose(u),c_f))
-            x = np.dot(np.conjugate(c_f), np.dot(np.conjugate(u),x))
+            x = np.matmul(gd, np.matmul(np.transpose(u),c_f))
+            x = np.matmul(np.conjugate(c_f), np.matmul(np.conjugate(u),x))
             rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = x[triu_idx]  # type leading
-            #rslt[(l*ntype+t)*dof:(l*ntype+t+1)*dof] = x[triu_idx]  # mode leading
     return rslt
