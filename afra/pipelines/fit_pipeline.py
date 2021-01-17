@@ -15,7 +15,7 @@ class fitpipe(pipe):
         super(fitpipe, self).__init__(data,noises,mask,beams,targets,fiducials,fiducial_beams,templates,template_noises,template_beams,foreground,background,likelihood,filt)
         # analyse select dict
         self._anadict = {'gauss':self.analyse_gauss, 'hl':self.analyse_hl}
-        # Bayesian engine, to be assigned
+        # Bayesian engine to be assigned
         self.engine = None
 
     @property
@@ -36,7 +36,7 @@ class fitpipe(pipe):
         return self._anadict[self._likelihood](kwargs)
 
     def analyse_gauss(self, kwargs=dict()):
-        # gauss likelihood simplifies the usage of noise and fiducial model
+        # gauss likelihood
         self.engine = gaussfit(self._data_bp,np.mean(self._fiducial_bp,axis=0),np.mean(self._noise_bp,axis=0),self._covmat,self._background_obj,self._foreground_obj)
         if (len(self._paramrange)):
             self._engine.rerange(self._paramrange)
@@ -45,6 +45,7 @@ class fitpipe(pipe):
         return result
 
     def analyse_hl(self, kwargs=dict()):
+        # noise offset improved HL likelihood
         offset_bp = np.mean(self._noise_bp,axis=0)  # effecive offset (1503.01347, 2010.01139)
         for l in range(offset_bp.shape[1]):
             offset_bp[:,l,:,:] *= np.sqrt(self._estimator.modes[l]+0.5)

@@ -21,12 +21,15 @@ def empcov(sample):
     m = np.mean(sample,axis=0)
     u = sample-m
     s = np.dot(u.T,u)/(n-1)
+    if (n > p+2):  # Hartlap correction
+        s *= (n-1)/(n-p-2)
     return s
 
 
 def oascov(sample, bsize=1):
     """
-    OAS shrinkage covariance matrix estimation with block
+    OAS shrinkage covariance matrix estimation with block,
+    specialized for cosmic variance estimation.
 
     Parameters
     ---------
@@ -45,6 +48,8 @@ def oascov(sample, bsize=1):
     m = np.mean(sample,axis=0)
     u = sample-m
     s = np.dot(u.T,u)/(n-1)
+    if (n > p+2):  # Hartlap correction
+        s *= (n-1)/(n-p-2)
     # rho is block invariant
     mu = (np.trace(s)/p)
     alpha = np.mean(s**2)
@@ -140,7 +145,7 @@ def hvec(cps,cps_hat,cps_fid):
             assert (any(d>=0))
             #if (any(d<0)):
             #    rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] *= np.nan_to_num(np.inf)
-            gd = np.diag( np.sign(d - 1.) * np.sqrt(2. * (d - np.log(d) - 1.)) )
+            gd = np.diag(np.sign(d-1.)*np.sqrt(2.*(d-np.log(d)-1.)))
             x = np.matmul(gd, np.matmul(np.transpose(u),c_f))
             x = np.matmul(np.conjugate(c_f), np.matmul(np.conjugate(u),x))
             rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = x[triu_idx]  # type leading

@@ -2,7 +2,7 @@ import numpy as np
 from afra.models.fg_models import *
 from afra.models.bg_models import *
 from afra.tools.ps_estimator import pstimator
-from afra.tools.aux import gvec, empcov, oascov
+from afra.tools.aux import gvec, empcov
 
 
 class pipe(object):
@@ -128,6 +128,10 @@ class pipe(object):
         return self._noise_bp
 
     @property
+    def noise_nsamp(self):
+        return self._noise_nsamp
+
+    @property
     def noise_flag(self):
         return self._noise_flag
 
@@ -160,10 +164,6 @@ class pipe(object):
         return self._ntarget
 
     @property
-    def nsamp(self):
-        return self._nsamp
-
-    @property
     def debug(self):
         return self._debug
 
@@ -178,6 +178,10 @@ class pipe(object):
     @property
     def fiducials(self):
         return self._fiducials
+
+    @property
+    def fiducial_nsamp(self):
+        return self._fiducial_nsamp
 
     @property
     def fiducial_flag(self):
@@ -284,7 +288,7 @@ class pipe(object):
             assert isinstance(noises, dict)
             assert (noises.keys() == self._data.keys())
             assert (len(noises[next(iter(noises))].shape) == 3)
-            self._nsamp = noises[next(iter(noises))].shape[0]
+            self._noise_nsamp = noises[next(iter(noises))].shape[0]
             assert (noises[next(iter(noises))].shape[1] == 3)
             assert (noises[next(iter(noises))].shape[2] == self._npix)
             self._noises = noises.copy()
@@ -329,7 +333,10 @@ class pipe(object):
         if fiducials is not None:
             assert isinstance(fiducials, dict)
             assert (fiducials.keys() == self._data.keys())
-            assert (fiducials[next(iter(fiducials))].shape == (self._nsamp,3,self._npix))
+            assert (len(fiducials[next(iter(fiducials))].shape) == 3)
+            self._fiducial_nsamp = fiducials[next(iter(fiducials))].shape[0]
+            assert (fiducials[next(iter(fiducials))].shape[1] == 3)
+            assert (fiducials[next(iter(fiducials))].shape[2] == self._npix)
             self._fiducial_flag = True
             self._fiducials = fiducials.copy()
         else:
@@ -355,7 +362,7 @@ class pipe(object):
             assert isinstance(templates, dict)
             self._template_freqlist = sorted(templates.keys())
             self._template_nfreq = len(self._template_freqlist)
-            assert (self._template_nfreq < 3)
+            assert (self._template_nfreq==1 or self._template_nfreq==2)
             assert (templates[next(iter(templates))].shape == (3,self._npix))
             self._template_flag = True
             self._templates = templates.copy()
@@ -443,13 +450,13 @@ class pipe(object):
     @noise_bp.setter
     def noise_bp(self, noise_bp):
         if noise_bp is not None:
-            assert (noise_bp.shape == (self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq))
+            assert (noise_bp.shape == (self._noise_nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq))
         self._noise_bp = noise_bp
 
     @fiducial_bp.setter
     def fiducial_bp(self, fiducial_bp):
         if fiducial_bp is not None:
-            assert (fiducial_bp.shape == (self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq))
+            assert (fiducial_bp.shape == (self._fiducial_nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq))
         self._fiducial_bp = fiducial_bp
 
     @template_bp.setter
@@ -515,7 +522,7 @@ class pipe(object):
             for i in range(self._template_nfreq):
                 # allocate for template
                 data_bp = np.zeros((self._ntarget,self._estimator.nmode),dtype=np.float64)
-                noise_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode),dtype=np.float64)
+                noise_bp = np.zeros((self._noise_nsamp,self._ntarget,self._estimator.nmode),dtype=np.float64)
                 _fi = self._template_freqlist[i]
                 # template workspace
                 twsp = self._estimator.autoWSP(self._templates[_fi],beams=self._template_beams[_fi])
@@ -538,7 +545,7 @@ class pipe(object):
             else:
                 self._foreground_obj = self._foreground(self._freqlist,self._estimator)
         # STEP IV-A
-        # data PS estimations (with workspace for data & fiducials)
+        # data PS estimations (with workspace)
         # allocate
         wsp_dict = dict()
         self.data_bp = np.zeros((self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float64)
@@ -560,19 +567,19 @@ class pipe(object):
         if self._fiducial_flag:
             # allocate
             fwsp_dict = dict()
-            self.fiducial_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float64)
+            self.fiducial_bp = np.zeros((self._fiducial_nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float64)
             for i in range(self._nfreq):
                 _fi = self._freqlist[i]
                 # auto corr.
                 fwsp_dict[(i,i)] = self._estimator.autoWSP(self._fiducials[_fi][0],beams=self._fiducial_beams[_fi])
-                for s in range(self._nsamp):
+                for s in range(self._fiducial_nsamp):
                     # auto corr.
                     ftmp = self._estimator.autoBP(self._fiducials[_fi][s],wsp=fwsp_dict[(i,i)],beams=self._fiducial_beams[_fi])
                     self._fiducial_bp[s,:,:,i,i] = np.array(ftmp[1:1+self._ntarget])
                 for j in range(i+1,self._nfreq):
                     _fj = self._freqlist[j]
                     fwsp_dict[(i,j)] = self._estimator.crosWSP(np.r_[self._fiducials[_fi][0],self._fiducials[_fj][0]],beams=[self._fiducial_beams[_fi],self._fiducial_beams[_fj]])
-                    for s in range(self._nsamp):
+                    for s in range(self._fiducial_nsamp):
                         # cross corr.
                         ftmp = self._estimator.crosBP(np.r_[self._fiducials[_fi][s],self._fiducials[_fj][s]],wsp=fwsp_dict[(i,j)],beams=[self._fiducial_beams[_fi],self._fiducial_beams[_fj]])
                         self._fiducial_bp[s,:,:,i,j] = np.array(ftmp[1:1+self._ntarget])
@@ -581,8 +588,8 @@ class pipe(object):
         # noise PS estimations
         if self._noise_flag:
             # allocate
-            self.noise_bp = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float64)
-            for s in range(self._nsamp):
+            self.noise_bp = np.zeros((self._noise_nsamp,self._ntarget,self._estimator.nmode,self._nfreq,self._nfreq),dtype=np.float64)
+            for s in range(self._noise_nsamp):
                 for i in range(self._nfreq):
                     _fi = self._freqlist[i]
                     # auto corr.
@@ -597,14 +604,10 @@ class pipe(object):
         # STEP V
         # fiducial+noise PS covariance matrix
         if self._fiducial_flag and self._noise_flag:
-            # block cov
             xfid = gvec(self._fiducial_bp)
             xnoi = gvec(self._noise_bp)
-            self.covmat = np.zeros((xfid.shape[1],xfid.shape[1]),dtype=np.float64)
-            nblock = len(self._covmat)//self._ntarget
-            for t in range(self._ntarget):
-                self._covmat[nblock*t:nblock*(t+1),nblock*t:nblock*(t+1)] = oascov(xfid[:,nblock*t:nblock*(t+1)],self._nfreq*(self._nfreq+1)//2) + oascov(xnoi[:,nblock*t:nblock*(t+1)])  # OAS covariance estimation
-                #empcov(xfid[:,nblock*t:nblock*(t+1)]) + empcov(xnoi[:,nblock*t:nblock*(t+1)])  # empirical covariance estimation
+            # full cov
+            self.covmat = empcov(xfid) + empcov(xnoi)
 
     def reprocess(self, data):
         """

@@ -2,7 +2,7 @@ import numpy as np
 from afra.pipelines.pipeline import pipe
 from afra.methods.abs import *
 from afra.methods.fit import * 
-from afra.tools.aux import gvec, empcov, oascov
+from afra.tools.aux import gvec, empcov
 from afra.tools.icy_decorator import icy
 
 @icy
@@ -142,14 +142,10 @@ class abspipe(pipe):
         # assemble fiducial+abs
         abs_bp = self._absrslt.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
         abs_fid = self._fiducial_bp[:,:,:,0,0].reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
-        # block cov
+        # empirical cov
         xbp = gvec(abs_bp)
         xfid = gvec(abs_fid)
-        self.covmat = np.zeros((xfid.shape[1],xfid.shape[1]),dtype=np.float64)
-        nblock = len(self._covmat)//self._ntarget
-        for t in range(self._ntarget):
-            self._covmat[nblock*t:nblock*(t+1),nblock*t:nblock*(t+1)] = 2.*oascov(xbp[:,nblock*t:nblock*(t+1)]) + oascov(xfid[:,nblock*t:nblock*(t+1)])  # OAS covariance estimation
-            #2.*empcov(xbp[:,nblock*t:nblock*(t+1)]) + empcov(xfid[:,nblock*t:nblock*(t+1)])  # empirical covariance estimation
+        self.covmat = 2.*empcov(xbp) + empcov(xfid)
         # null noise
         null_noise = np.zeros((self._ntarget,self._estimator.nmode,1,1),dtype=np.float64)
         if (self._likelihood == 'gauss'):
