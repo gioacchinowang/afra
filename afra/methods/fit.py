@@ -81,7 +81,7 @@ class fit(object):
     @data.setter
     def data(self, data):
         assert isinstance(data, np.ndarray)
-        assert (len(data.shape) == 4)
+        assert (data.ndim == 4)
         if (np.isnan(data).any()):
             raise ValueError('encounter nan')
         self._data = data.copy()
@@ -89,7 +89,7 @@ class fit(object):
     @fiducial.setter
     def fiducial(self, fiducial):
         assert isinstance(fiducial, np.ndarray)
-        assert (len(fiducial.shape) == 4)
+        assert (fiducial.ndim == 4)
         if (np.isnan(fiducial).any()):
             raise ValueError('encounter nan')
         self._fiducial = fiducial.copy()
@@ -97,7 +97,7 @@ class fit(object):
     @noise.setter
     def noise(self, noise):
         assert isinstance(noise, np.ndarray)
-        assert (len(noise.shape) == 4)
+        assert (noise.ndim == 4)
         if (np.isnan(noise).any()):
             raise ValueError('encounter nan')
         self._noise = noise.copy()
@@ -105,7 +105,7 @@ class fit(object):
     @covariance.setter
     def covariance(self, covariance):
         assert isinstance(covariance, np.ndarray)
-        assert (len(covariance.shape) == 2)
+        assert (covariance.ndim == 2)
         assert (covariance.shape[0] == covariance.shape[1])
         if (np.isnan(covariance).any()):
             raise ValueError('encounter nan')

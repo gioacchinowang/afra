@@ -5,7 +5,8 @@ from scipy.linalg import sqrtm
 
 def empcov(sample):
     """
-    empirical covariance matrix estimation with SVD
+    empirical covariance matrix estimation
+    + conditional Hartlap correction
 
     Parameters
     ----------
@@ -14,41 +15,37 @@ def empcov(sample):
     """
     assert isinstance(sample, np.ndarray)
     n,p = sample.shape
-    assert (n>0 and p>0)
-    # empirical estimation
-    if n == 1:
-        return np.zeros((p,p))
-    m = np.mean(sample,axis=0)
-    u = sample-m
+    assert (n>1 and p>0)
+    u = sample-np.mean(sample,axis=0)
     s = np.dot(u.T,u)/(n-1)
-    if (n > p+2):  # Hartlap correction
+    # with Hartlap correction under condition p<0.12n
+    if (0.12*n > p):
         s *= (n-1)/(n-p-2)
     return s
 
 
 def oascov(sample, bsize=1):
     """
-    OAS shrinkage covariance matrix estimation with block,
-    specialized for cosmic variance estimation.
-
+    OAS shrinkage covariance matrix estimation
+    + conditional Hartlap correction
+    + block diagonal adjustment
+    
     Parameters
     ---------
     sample:
         input sample
-
+    
     bsize:
         block size
     """
     assert isinstance(sample,np.ndarray)
     n,p = sample.shape
-    assert (n>0 and p>0)
+    assert (n>1 and p>0)
     # empirical estimation
-    if n == 1:
-        return np.zeros((p,p))
-    m = np.mean(sample,axis=0)
-    u = sample-m
+    u = sample-np.mean(sample,axis=0)
     s = np.dot(u.T,u)/(n-1)
-    if (n > p+2):  # Hartlap correction
+    # with Hartlap correction under condition p<0.12n
+    if (0.12*n > p):
         s *= (n-1)/(n-p-2)
     # rho is block invariant
     mu = (np.trace(s)/p)
@@ -57,6 +54,32 @@ def oascov(sample, bsize=1):
     denominator = (n+1.)*(alpha-(mu**2)/p)
     rho = 1. if denominator == 0 else min(1., numerator/denominator)
     return (1.-rho)*s+np.kron(np.eye(p//bsize),np.ones((bsize,bsize)))*rho*mu
+
+
+def jkncov(sample):
+    """
+    empirical covariance matrix estimation
+    + jackknife correction
+    + conditional Hartlap correction
+
+    Parameters
+    ---------
+    sample:
+        input sample
+    """
+    assert isinstance(sample,np.ndarray)
+    n,p = sample.shape
+    assert (n>1 and p>0)
+    # empirical
+    u = sample-np.mean(sample,axis=0)
+    s = n*np.dot(u.T,u)/(n-1)
+    # jackknife
+    for i in range(n):
+        s -= np.cov(np.delete(sample,i,0),rowvar=False)*(n-1)/n
+    # with Hartlap correction under condition p<0.12n
+    if (0.12*n > p):
+        s *= (n-1)/(n-p-2)
+    return s
 
 
 def umap(x, r=[0.,1.]):
@@ -105,13 +128,13 @@ def gvec(cps):
     dof = nfreq*(nfreq+1)//2  # distinctive elements at each mode
     dof_arr = np.arange(dof)
     triu_idx = np.triu_indices(nfreq)
-    if (len(cps.shape) == 4):  # single sample
+    if (cps.ndim == 4):  # single sample
         rslt = np.zeros(ntype*nmode*dof)
         for t in range(ntype):
             for l in range(nmode):
                 rslt[(t*nmode+l)*dof:(t*nmode+l+1)*dof] = cps[t,l][triu_idx]  # type leading
         return rslt
-    elif (len(cps.shape) == 5):  # ensemble
+    elif (cps.ndim == 5):  # ensemble
         nsamp = cps.shape[0]
         rslt = np.zeros((nsamp,ntype*nmode*dof))
         for s in range(nsamp):
@@ -126,7 +149,7 @@ def gvec(cps):
 def hvec(cps,cps_hat,cps_fid):
     """with measured cps_hat, fiducial cps_fid, modeled cps
     """
-    assert (len(cps.shape) == 4)
+    assert (cps.ndim == 4)
     assert isinstance(cps, np.ndarray)
     assert (cps.shape[-1] == cps.shape[-2])
     nfreq = cps.shape[-2]

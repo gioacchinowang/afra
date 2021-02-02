@@ -8,5 +8,4 @@
 
 - tutorial 05, templated fore-/back-ground models
 - tutorial 06, template-fitting pre-preocess
-- tutorial 07, T mode template-fitting
-- tutorial 08, EB mode template-fitting
+- tutorial 07, pure CMB signal fitting

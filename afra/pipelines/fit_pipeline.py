@@ -1,6 +1,7 @@
 import numpy as np
 from afra.pipelines.pipeline import pipe
 from afra.methods.fit import *
+from afra.tools.bp_vis import bpvis
 from afra.tools.icy_decorator import icy
 
 
@@ -30,7 +31,24 @@ class fitpipe(pipe):
 
     def run(self, aposcale=6., psbin=20, lmin=None, lmax=None, kwargs=dict()):
         self.preprocess(aposcale,psbin,lmin,lmax)
-        return self.analyse(kwargs)
+        result = self.analyse(kwargs)
+        # visualise data and result
+        bestpar = result.samples[np.where(result['logl']==max(result['logl']))][0]
+        bestbp = None
+        for i in range(len(bestpar)):
+            if self._foreground_obj is not None:
+                self._foreground_obj.reset({self._paramlist[i]: bestpar[i]})
+            if self._background_obj is not None:
+                self._background_obj.reset({self._paramlist[i]: bestpar[i]})
+        if self._foreground_obj is None:
+            bestbp = self._background_obj.bandpower()
+        elif self._background_obj is None:
+            bestbp = self._foreground_obj.bandpower()
+        else:
+            bestbp = self._foreground_obj.bandpower() + self._background_obj.bandpower()
+        bpvis(self._targets,self._estimator._modes,self._freqlist,self._data_bp,self._fiducial_bp,self._noise_bp,bestbp)
+        #
+        return result
 
     def analyse(self, kwargs=dict()):
         return self._anadict[self._likelihood](kwargs)

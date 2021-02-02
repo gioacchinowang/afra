@@ -1,4 +1,5 @@
 import numpy as np
+import camb
 from afra.tools.ps_estimator import pstimator
 from afra.tools.icy_decorator import icy
 
@@ -168,14 +169,21 @@ class acmbmodel(bgmodel):
             self._blacklist.append('r')
             self._blacklist.append('AL')
         # calculate camb template CMB PS with default parameters
-        import camb
         pars = camb.CAMBparams()
         pars.set_cosmology(H0=67.5,ombh2=0.022,omch2=0.122,mnu=0.06,omk=0,tau=0.06)
-        pars.InitPower.set_params(As=2e-9,ns=0.965,r=0.05)
+        pars.InitPower.set_params(As=2e-9,ns=0.965,r=0.)
         pars.set_for_lmax(max(4000,self._estimator._lmax),lens_potential_accuracy=2)
+        pars.WantTensors = False
+        pars.DoLensing = True
+        self._template_sl = camb.get_results(pars)
+        self._template_ps = self._template_sl.get_lensed_scalar_cls(max(4000,self._estimator._lmax),CMB_unit='muK',raw_cl=True)
         pars.WantTensors = True
-        results = camb.get_results(pars)
-        self._template_ps = results.get_cmb_power_spectra(pars,CMB_unit='muK',raw_cl=True)
+        pars.DoLensing = False
+        self._template_sl = camb.get_results(pars)
+
+    @property
+    def template_sl(self):
+        return self._template_sl
 
     @property
     def template_ps(self):
@@ -200,14 +208,16 @@ class acmbmodel(bgmodel):
 
     def bandpower(self):
         enum = {'T':[0],'E':[1],'B':[2],'EB':[1,2],'TEB':[0,1,2]}
-        fiducial_ps = np.transpose(self._template_ps['lensed_scalar']*[1.,self._params['AE'],self._params['AL'],1.])[enum[self._estimator._targets],self._estimator._lmin:self._estimator._lmax+1] + np.transpose(self._template_ps['tensor']*[1.,self._params['AE'],self._params['r']/0.05,1.])[enum[self._estimator._targets],self._estimator._lmin:self._estimator._lmax+1]
-        # fiducial_ps in shape (ntarget,lmax-lmin)
-        fiducial_bp = np.zeros((self._estimator._ntarget,self._estimator._nmode),dtype=np.float64)
-        # from Cl to Dl
-        for t in range(self._estimator._ntarget):
-            fiducial_bp[t] = self._estimator.bpconvert(fiducial_ps[t])
+        # fast process for recalculating with new r
+        inflation_params = camb.initialpower.InitialPowerLaw()
+        inflation_params.set_params(As=2e-9,ns=0.965,r=self._params['r'])
+        self._template_sl.power_spectra_from_transfer(inflation_params) #warning OK here, not changing scalars
+        fiducial_ps = np.transpose(self._template_sl.get_total_cls(max(4000,self._estimator._lmax),CMB_unit='muK',raw_cl=True)*[1.,self._params['AE'],1.,1.]+self._template_ps*[0.,0.,self._params['AL'],0.])[enum[self._estimator._targets],:self._estimator._lmax+1]
+        # from PS to BP
+        fiducial_bp = self._estimator.bpconvert(fiducial_ps)
         # impose filtering
         fiducial_bp = self._estimator.filtrans(fiducial_bp)
+        # form BP matrix
         bp_out = np.ones((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         for t in range(self._estimator._ntarget):
             for l in range(self._estimator._nmode):

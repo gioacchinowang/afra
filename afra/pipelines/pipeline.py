@@ -2,7 +2,7 @@ import numpy as np
 from afra.models.fg_models import *
 from afra.models.bg_models import *
 from afra.tools.ps_estimator import pstimator
-from afra.tools.aux import gvec, empcov
+from afra.tools.aux import gvec, empcov, jkncov
 
 
 class pipe(object):
@@ -276,7 +276,7 @@ class pipe(object):
         assert isinstance(data, dict)
         self._freqlist = sorted(data.keys())
         self._nfreq = len(self._freqlist)
-        assert (len(data[next(iter(data))].shape) == 2)
+        assert (data[next(iter(data))].ndim == 2)
         assert (data[next(iter(data))].shape[0] == 3)
         self._npix = data[next(iter(data))].shape[1]
         self._nside = int(np.sqrt(self._npix//12))
@@ -287,7 +287,7 @@ class pipe(object):
         if noises is not None:
             assert isinstance(noises, dict)
             assert (noises.keys() == self._data.keys())
-            assert (len(noises[next(iter(noises))].shape) == 3)
+            assert (noises[next(iter(noises))].ndim == 3)
             self._noise_nsamp = noises[next(iter(noises))].shape[0]
             assert (noises[next(iter(noises))].shape[1] == 3)
             assert (noises[next(iter(noises))].shape[2] == self._npix)
@@ -333,7 +333,7 @@ class pipe(object):
         if fiducials is not None:
             assert isinstance(fiducials, dict)
             assert (fiducials.keys() == self._data.keys())
-            assert (len(fiducials[next(iter(fiducials))].shape) == 3)
+            assert (fiducials[next(iter(fiducials))].ndim == 3)
             self._fiducial_nsamp = fiducials[next(iter(fiducials))].shape[0]
             assert (fiducials[next(iter(fiducials))].shape[1] == 3)
             assert (fiducials[next(iter(fiducials))].shape[2] == self._npix)
@@ -429,7 +429,6 @@ class pipe(object):
         else:
             assert (foreground in self._foreground_catalog)
             self._foreground = self._foreground_catalog[foreground]
-            
 
     @paramlist.setter
     def paramlist(self, paramlist):
@@ -486,7 +485,7 @@ class pipe(object):
     @covmat.setter
     def covmat(self, covmat):
         if covmat is not None:
-            assert (len(covmat.shape) == 2)
+            assert (covmat.ndim == 2)
             assert (covmat.shape[0] == self._ntarget*self._estimator.nmode*self._nfreq*(self._nfreq+1)//2)
             assert (covmat.shape[1] == covmat.shape[0])
         self._covmat = covmat
@@ -540,10 +539,7 @@ class pipe(object):
         if self._background is not None:
             self._background_obj = self._background(self._freqlist,self._estimator)
         if self._foreground is not None:
-            if self._template_flag:
-                self._foreground_obj = self._foreground(self._freqlist,self._estimator,self._template_bp)
-            else:
-                self._foreground_obj = self._foreground(self._freqlist,self._estimator)
+            self._foreground_obj = self._foreground(self._freqlist,self._estimator,self._template_bp)
         # STEP IV-A
         # data PS estimations (with workspace)
         # allocate
@@ -607,7 +603,8 @@ class pipe(object):
             xfid = gvec(self._fiducial_bp)
             xnoi = gvec(self._noise_bp)
             # full cov
-            self.covmat = empcov(xfid) + empcov(xnoi)
+            ncom = min(self._fiducial_nsamp,self._noise_nsamp)
+            self.covmat = jkncov(xfid[:ncom]+xnoi[:ncom])
 
     def reprocess(self, data):
         """
@@ -628,5 +625,3 @@ class pipe(object):
                 stmp = self._estimator.crosBP(np.r_[data[_fi],data[_fj]],beams=[self._beams[_fi],self._beams[_fj]])
                 self._data_bp[:,:,i,j] = np.array(stmp[1:1+self._ntarget])
                 self._data_bp[:,:,j,i] = np.array(stmp[1:1+self._ntarget])
-
-# END

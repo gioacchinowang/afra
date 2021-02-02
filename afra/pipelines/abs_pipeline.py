@@ -2,7 +2,7 @@ import numpy as np
 from afra.pipelines.pipeline import pipe
 from afra.methods.abs import *
 from afra.methods.fit import * 
-from afra.tools.aux import gvec, empcov
+from afra.tools.aux import gvec, empcov, jkncov
 from afra.tools.icy_decorator import icy
 
 @icy
@@ -44,10 +44,10 @@ class abspipe(pipe):
     def absrslt(self, absrslt):
         if absrslt is not None:
             assert isinstance(absrslt, np.ndarray)
-            if (len(absrslt.shape) == 2):
+            if (absrslt.ndim == 2):
                 assert (absrslt.shape == (self._ntarget,self._estimator.nmode))
             else:
-                assert (absrslt.shape == (self._nsamp,self._ntarget,self._estimator.nmode))
+                assert (absrslt.shape == (self._noise_nsamp,self._ntarget,self._estimator.nmode))
         self._absrslt = absrslt
 
     @absinfo.setter
@@ -122,12 +122,12 @@ class abspipe(pipe):
                 noise_std_diag[t,l] = np.diag(noise_std[t,l])
         # assemble data+noise-noise_mean
         ndat = self._noise_bp.copy()
-        for s in range(self._nsamp):
+        for s in range(self._noise_nsamp):
             ndat[s] += self._data_bp - noise_mean
         # shift for each angular mode independently
         safe_shift = shift*np.mean(noise_std_diag,axis=2)  # safe_shift in shape (nmode,ntarget)
-        self.absrslt = np.zeros((self._nsamp,self._ntarget,self._estimator.nmode),dtype=np.float64)
-        for s in range(self._nsamp):
+        self.absrslt = np.zeros((self._noise_nsamp,self._ntarget,self._estimator.nmode),dtype=np.float64)
+        for s in range(self._noise_nsamp):
             for t in range(self._ntarget):
                 # send PS to ABS method
                 spt = abssep(ndat[s,t],noise_mean[t],noise_std_diag[t],shift=safe_shift[t],threshold=threshold)
@@ -140,12 +140,12 @@ class abspipe(pipe):
         self._nfreq = 1
         self._background_obj._nfreq = 1
         # assemble fiducial+abs
-        abs_bp = self._absrslt.reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
-        abs_fid = self._fiducial_bp[:,:,:,0,0].reshape(self._nsamp,self._ntarget,self._estimator.nmode,1,1)
+        abs_bp = self._absrslt.reshape(self._noise_nsamp,self._ntarget,self._estimator.nmode,1,1)
+        abs_fid = self._fiducial_bp[:,:,:,0,0].reshape(self._fiducial_nsamp,self._ntarget,self._estimator.nmode,1,1)
         # empirical cov
         xbp = gvec(abs_bp)
         xfid = gvec(abs_fid)
-        self.covmat = 2.*empcov(xbp) + empcov(xfid)
+        self.covmat = 2.*jkncov(xbp) + jkncov(xfid)
         # null noise
         null_noise = np.zeros((self._ntarget,self._estimator.nmode,1,1),dtype=np.float64)
         if (self._likelihood == 'gauss'):

@@ -158,7 +158,7 @@ class asyncmodel(fgmodel):
         self.paramdft = self.initdft()
         assert (not self._template_flag)
         # reference frequency
-        self.template_freqlist = [23]
+        self._template_freqlist = [23]
 
     def initlist(self):
         """parameters are set as
@@ -190,7 +190,7 @@ class asyncmodel(fgmodel):
         """
         beta_val_s = self.params['beta_s']
         ref = self._template_freqlist[0]
-        dl_tmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_s'])
+        dl_tmp = self._estimator.bpconvert(np.insert((np.arange(1,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_s'],[0],0.))
         dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         # estimate bandpower from templates
         for t in range(self._estimator._ntarget):
@@ -274,7 +274,7 @@ class adustmodel(fgmodel):
         self.paramrange = self.initrange()
         self.paramdft = self.initdft()
         assert (not self._template_flag)
-        self.template_freqlist = [353.]
+        self._template_freqlist = [353.]
 
     def initlist(self):
         """parameters are set as
@@ -310,7 +310,7 @@ class adustmodel(fgmodel):
         """
         beta_val_d = self.params['beta_d']
         ref = self._template_freqlist[0]
-        dl_tmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_d'])
+        dl_tmp = self._estimator.bpconvert(np.insert((np.arange(1,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_d'],[0],0.))
         dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         for t in range(self._estimator._ntarget):
             bp_d = self._params['A_d'+self._estimator._targets[t]]*dl_tmp
@@ -391,7 +391,7 @@ class asyncadustmodel(fgmodel):
         self.paramrange = self.initrange()
         self.paramdft = self.initdft()
         assert (not self._template_flag)
-        self.template_freqlist = [23.,353.]
+        self._template_freqlist = [23.,353.]
 
     def initlist(self):
         """parameters are set as
@@ -438,8 +438,8 @@ class asyncadustmodel(fgmodel):
         rho = self.params['rho']
         ref_s = self._template_freqlist[0]
         ref_d = self._template_freqlist[1]
-        dl_stmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_s']) 
-        dl_dtmp = self._estimator.bpconvert((np.arange(self._estimator._lmin,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_d'])
+        dl_stmp = self._estimator.bpconvert(np.insert((np.arange(1,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_s'],[0],0.))
+        dl_dtmp = self._estimator.bpconvert(np.insert((np.arange(1,self._estimator._lmax+1).astype(np.float64)/80.)**self._params['alpha_d'],[0],0.))
         dl = np.zeros((self._estimator._ntarget,self._estimator._nmode,self._nfreq,self._nfreq),dtype=np.float64)
         for t in range(self._estimator._ntarget):
             bp_s = self._params['A_s'+self._estimator._targets[t]]*dl_stmp
