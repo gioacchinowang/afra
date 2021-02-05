@@ -160,7 +160,7 @@ class pstimator(object):
         if lmax is None:
             self._lmax = 2*self._nside-1
         else:
-            assert isinstance(lmax, int)
+            assert isinstance(lmax, (int,np.int64))
             assert (lmax < 3*self._nside)
             self._lmax = lmax
 
