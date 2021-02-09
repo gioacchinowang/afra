@@ -7,7 +7,7 @@ from afra.tools.icy_decorator import icy
 @icy
 class pstimator(object):
 
-    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmin=None, lmax=None, lbin=None, targets='T', filt=None):
+    def __init__(self, nside, mask=None, aposcale=None, psbin=None, lmin=None, lmax=None, lbin=None, lcut=None, targets='T', filt=None):
         """
         Parameters
         ----------
@@ -31,6 +31,9 @@ class pstimator(object):
 
         lbin : (positive) integer
             Angular mode bin size for NaMaster calculation.
+
+        lcut : (positive) integer
+            Ignoring the first and last number of bins from NaMaster results.
         
         targets : string
             Choosing among 'T', 'E', 'B', 'EB', 'TEB' mode.
@@ -41,6 +44,7 @@ class pstimator(object):
         self.nside = nside
         self.aposcale = aposcale
         self.lbin = None
+        self.lcut = None
         self.lmin = lmin
         self.lmax = lmax
         self.mask = mask
@@ -82,6 +86,10 @@ class pstimator(object):
     @property
     def lbin(self):
         return self._lbin
+
+    @property
+    def lcut(self):
+        return self._lcut
 
     @property
     def psbin(self):
@@ -146,6 +154,15 @@ class pstimator(object):
             assert (lbin > 0)
             self._lbin = lbin
 
+    @lcut.setter
+    def lcut(self, lcut):
+        if lcut is None:
+            self._lcut = 5
+        else:
+            assert isinstance(lcut, int)
+            assert (lcut > 0)
+            self._lcut = lcut
+
     @lmin.setter
     def lmin(self, lmin):
         if lmin is None:
@@ -158,7 +175,7 @@ class pstimator(object):
     @lmax.setter
     def lmax(self, lmax):
         if lmax is None:
-            self._lmax = 2*self._nside-1
+            self._lmax = self._nside
         else:
             assert isinstance(lmax, (int,np.int64))
             assert (lmax < 3*self._nside)
@@ -178,12 +195,13 @@ class pstimator(object):
     @psbin.setter
     def psbin(self, psbin):
         if psbin is None:
-            self._psbin = 2
+            self._psbin = 1
+            self.modes = self.rebinning(self._b.get_effective_ells())
         else:
             assert isinstance(psbin, int)
-            assert (psbin > 1)
+            assert (psbin > 0 and psbin < (self._lmax-self._lmin)//self._lbin - 2*self._lcut)
             self._psbin = psbin
-            self.modes = self.robin(self._b.get_effective_ells())
+            self.modes = self.rebinning(self._b.get_effective_ells())
 
     @modes.setter
     def modes(self, modes):
@@ -204,13 +222,14 @@ class pstimator(object):
             assert (self._targets in filt)
         self._filt = filt
 
-    def robin(self, bp):
-        assert (len(bp)%self._psbin == 0)
+    def rebinning(self, bp):
+        bp_trim = bp[self._lcut:-self._lcut]
         bbp = np.empty(self._psbin, dtype=np.float64)
-        width = len(bp)//self._psbin
+        idx_ini = np.arange(self._psbin)*(len(bp_trim)//self._psbin)
+        idx_end = idx_ini + len(bp_trim)//self._psbin
         for i in range(self._psbin):
-            bbp[i] = np.mean(bp[width*i:width*(i+1)])
-        return bbp[:-1]  # discard the last bin
+            bbp[i] = np.mean(bp_trim[idx_ini[i]:idx_end[i]])
+        return bbp
 
     def bpconvert(self, ps):
         """
@@ -227,11 +246,11 @@ class pstimator(object):
         """
         raw_conv = self._b.bin_cell(ps)
         if (raw_conv.ndim == 1):
-            return self.robin(raw_conv)
+            return self.rebinning(raw_conv)
         else:
-            fine_conv = np.empty((raw_conv.shape[0],self._psbin-1),dtype=np.float64)
+            fine_conv = np.empty((raw_conv.shape[0],self._psbin),dtype=np.float64)
             for i in range(fine_conv.shape[0]):
-                fine_conv[i] = self.robin(raw_conv[i])
+                fine_conv[i] = self.rebinning(raw_conv[i])
             return fine_conv
 
     def filtrans(self, bp):
@@ -500,11 +519,11 @@ class pstimator(object):
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f0, f0, self._b)
-            return (self._modes, cl00[0])
+            return (self._modes, self.rebinning(cl00[0]))
         else:
             cl00c = nmt.compute_coupled_cell(f0, f0)
             cl00 = wsp.decouple_cell(cl00c)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
 
     def crosBP_T(self, maps, wsp=None, beams=[None,None]):
         dat1 = maps[0]
@@ -521,11 +540,11 @@ class pstimator(object):
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f01, f02, self._b)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
         else:
             cl00c = nmt.compute_coupled_cell(f01, f02)
             cl00 = wsp.decouple_cell(cl00c)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
 
     def autoBP_E(self, maps, wsp=None, beams=None):
         dat = self.purified_e(maps)
@@ -537,11 +556,11 @@ class pstimator(object):
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f0, f0, self._b)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
         else:
             cl00c = nmt.compute_coupled_cell(f0, f0)
             cl00 = wsp.decouple_cell(cl00c)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
 
     def crosBP_E(self, maps, wsp=None, beams=[None,None]):
         dat1 = self.purified_e(maps[:3])
@@ -558,11 +577,11 @@ class pstimator(object):
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f01, f02, self._b)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
         else:
             cl00c = nmt.compute_coupled_cell(f01, f02)
             cl00 = wsp.decouple_cell(cl00c)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
 
     def autoBP_B(self, maps, wsp=None, beams=None):
         dat = self.purified_b(maps)
@@ -574,11 +593,11 @@ class pstimator(object):
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f0, f0, self._b)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
         else:
             cl00c = nmt.compute_coupled_cell(f0, f0)
             cl00 = wsp.decouple_cell(cl00c)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
 
     def crosBP_B(self, maps, wsp=None, beams=[None,None]):
         dat1 = self.purified_b(maps[:3])
@@ -595,11 +614,11 @@ class pstimator(object):
         # estimate PS
         if wsp is None:
             cl00 = nmt.compute_full_master(f01, f02, self._b)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
         else:
             cl00c = nmt.compute_coupled_cell(f01, f02)
             cl00 = wsp.decouple_cell(cl00c)
-            return (self._modes, self.robin(cl00[0]))
+            return (self._modes, self.rebinning(cl00[0]))
 
     def autoBP_EB(self, maps, wsp=None, beams=None):
         dat = self.purified_eb(maps)
@@ -614,13 +633,13 @@ class pstimator(object):
         if wsp is None:
             cl00_e = nmt.compute_full_master(f0_e, f0_e, self._b)
             cl00_b = nmt.compute_full_master(f0_b, f0_b, self._b)
-            return (self._modes, self.robin(cl00_e[0]), self.robin(cl00_b[0]))
+            return (self._modes, self.rebinning(cl00_e[0]), self.rebinning(cl00_b[0]))
         else:
             cl00c_e = nmt.compute_coupled_cell(f0_e, f0_e)
             cl00c_b = nmt.compute_coupled_cell(f0_b, f0_b)
             cl00_e = wsp.decouple_cell(cl00c_e)
             cl00_b = wsp.decouple_cell(cl00c_b)
-            return (self._modes, self.robin(cl00_e[0]), self.robin(cl00_b[0]))
+            return (self._modes, self.rebinning(cl00_e[0]), self.rebinning(cl00_b[0]))
 
     def crosBP_EB(self, maps, wsp=None, beams=[None,None]):
         dat1 = self.purified_eb(maps[:3])
@@ -642,13 +661,13 @@ class pstimator(object):
         if wsp is None:
             cl00_e = nmt.compute_full_master(f01_e, f02_e, self._b)
             cl00_b = nmt.compute_full_master(f01_b, f02_b, self._b)
-            return (self._modes, self.robin(cl00_e[0]), self.robin(cl00_b[0]))
+            return (self._modes, self.rebinning(cl00_e[0]), self.rebinning(cl00_b[0]))
         else:
             cl00c_e = nmt.compute_coupled_cell(f01_e, f02_e)
             cl00c_b = nmt.compute_coupled_cell(f01_b, f02_b)
             cl00_e = wsp.decouple_cell(cl00c_e)
             cl00_b = wsp.decouple_cell(cl00c_b)
-            return (self._modes, self.robin(cl00_e[0]), self.robin(cl00_b[0]))
+            return (self._modes, self.rebinning(cl00_e[0]), self.rebinning(cl00_b[0]))
 
     def autoBP_TEB(self, maps, wsp=None, beams=None):
         pass
